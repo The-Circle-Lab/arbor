@@ -31,7 +31,7 @@ export const COMPONENT_DESCRIPTIONS: Record<ChatComponent, string> = {
   community: 'Who has a say in this project, and who doesn\'t',
 }
 
-export const REFLECTION_QUESTIONS: Record<ChatComponent, { id: string; question: string; type: 'text' | 'multiselect' | 'choice' | 'priority-rank'; options?: string[]; withOpenText?: boolean }[]> = {
+export const REFLECTION_QUESTIONS: Record<ChatComponent, { id: string; question: string; type: 'text' | 'multiselect' | 'choice' | 'priority-rank'; options?: string[]; withOpenText?: boolean; shuffleOptions?: boolean }[]> = {
   object: [
     {
       id: 'success_definition',
@@ -52,11 +52,19 @@ export const REFLECTION_QUESTIONS: Record<ChatComponent, { id: string; question:
       type: 'text',
     },
     {
-      id: 'preferred_role',
-      question: 'What kind of contributor do you tend to be in group work? Select all that apply.',
+      id: 'position',
+      question: 'On past team projects, which of these did you usually end up doing? Select all that apply.',
       type: 'multiselect',
-      options: ['I take the lead and coordinate', 'I focus on executing my part well', 'I move between tasks as needed', 'I keep the group accountable', 'Hybrid — depends on the task', 'Other'],
+      options: ['Proposed a direction and got others on board', 'Kept the group organized and on schedule', 'Took a defined piece and ran it independently', 'Moved between tasks depending on what was needed', 'Took what was assigned and delivered it', 'Filled whatever was left once others had chosen', 'Other'],
+      shuffleOptions: true,
     },
+    {
+      id: 'voice',
+      question: 'Think of a time you disagreed with the direction your group was already moving toward. What did you usually do?',
+      type: 'choice',
+      options: ['Said so in the group conversation', 'Raised it with one person separately', 'Waited to see whether someone else would raise it', 'Went along with it and adjusted my own work around it', 'Other'],
+      shuffleOptions: true,
+    }
   ],
   division_of_labor: [
     {

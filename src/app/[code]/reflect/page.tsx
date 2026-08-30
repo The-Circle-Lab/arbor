@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useSession, getMembership } from '@/lib/session'
 import { CHAT_COMPONENTS, COMPONENT_LABELS, COMPONENT_DESCRIPTIONS, REFLECTION_QUESTIONS, ChatComponent } from '@/lib/chat-components'
@@ -8,6 +8,26 @@ import { WaitingRoom } from '@/components/WaitingRoom'
 import { ArbourLogo } from '@/components/ArbourLogo'
 
 type Responses = Record<ChatComponent, Record<string, string | string[] | Record<string, string>>>
+
+function shuffleArray<T>(arr: T[]): T[] {
+  const result = [...arr]
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[result[i], result[j]] = [result[j], result[i]]
+  }
+  return result
+}
+
+function shuffleWithOtherLast(options: string[]): string[] {
+  const rest = options.filter(o => o !== 'Other')
+  const hasOther = rest.length !== options.length
+  const shuffled = shuffleArray(rest)
+  return hasOther ? [...shuffled, 'Other'] : shuffled
+}
+
+function getDisplayOptions(map: Map<string, string[]>, component: ChatComponent, q: { id: string; options?: string[] }): string[] {
+  return map.get(`${component}-${q.id}`) ?? q.options ?? []
+}
 
 export default function ReflectPage() {
   const { code } = useParams<{ code: string }>()
@@ -24,6 +44,18 @@ export default function ReflectPage() {
     if (loading) return
     if (!user || !membership) { router.replace('/'); return }
   }, [loading, user, membership, router])
+
+  const shuffledOptionsMap = useMemo(() => {
+    const map = new Map<string, string[]>()
+    for (const component of CHAT_COMPONENTS) {
+      for (const q of REFLECTION_QUESTIONS[component]) {
+        if (q.shuffleOptions && q.options) {
+          map.set(`${component}-${q.id}`, shuffleWithOtherLast(q.options))
+        }
+      }
+    }
+    return map
+  }, [])
 
   if (loading || !user || !membership) {
     return (
@@ -141,7 +173,7 @@ export default function ReflectPage() {
 
                 {q.type === 'choice' && q.options && (
                   <div className="flex flex-col gap-2">
-                    {q.options.map(opt => {
+                    {getDisplayOptions(shuffledOptionsMap, currentComponent, q).map(opt => {
                       const selected = compResponses[q.id] === opt
                       return (
                         <label key={opt} className={`flex items-center gap-3 cursor-pointer border rounded-lg px-3 py-2.5 transition ${selected ? 'border-green-500 bg-green-50' : 'border-stone-200 hover:bg-stone-50'}`}>
@@ -178,7 +210,7 @@ export default function ReflectPage() {
 
                 {q.type === 'multiselect' && q.options && (
                   <div className="flex flex-col gap-2">
-                    {q.options.map(opt => {
+                    {getDisplayOptions(shuffledOptionsMap, currentComponent, q).map(opt => {
                       const selected = ((compResponses[q.id] as string[]) ?? []).includes(opt)
                       return (
                         <label key={opt} className={`flex items-center gap-3 cursor-pointer border rounded-lg px-3 py-2.5 transition ${selected ? 'border-green-500 bg-green-50' : 'border-stone-200 hover:bg-stone-50'}`}>
@@ -214,7 +246,7 @@ export default function ReflectPage() {
 
                 {q.type === 'priority-rank' && q.options && (
                   <div className="flex flex-col gap-2">
-                    {q.options.map(opt => {
+                    {getDisplayOptions(shuffledOptionsMap, currentComponent, q).map(opt => {
                       const sel = (compResponses[q.id] as Record<string, string>) ?? {}
                       const current = sel[opt]
                       return (
