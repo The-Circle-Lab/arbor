@@ -61,6 +61,7 @@ export default function ReflectPage() {
   const [currentIdx, setCurrentIdx] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [submitError, setSubmitError] = useState(false)
 
   useEffect(() => {
     if (loading) return
@@ -138,20 +139,20 @@ export default function ReflectPage() {
   async function handleSubmit() {
     if (!membership) return
     setSubmitting(true)
+    setSubmitError(false)
     try {
-      await Promise.all([
-        fetch('/api/reflections', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ memberId: membership.member_id, responses }),
-        }),
-        fetch('/api/reflections/subject', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ memberId: membership.member_id, responses: subjectResponses }),
-        }),
-      ])
+      const res = await fetch('/api/reflections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberId: membership.member_id, responses, subjectResponses }),
+      })
+      if (!res.ok) {
+        setSubmitError(true)
+        return
+      }
       setSubmitted(true)
+    } catch {
+      setSubmitError(true)
     } finally {
       setSubmitting(false)
     }
@@ -325,10 +326,16 @@ export default function ReflectPage() {
             ))}
           </div>
 
+          {submitError && (
+            <p className="text-sm text-red-600 mt-4">
+              Something went wrong submitting your reflection. Please try again.
+            </p>
+          )}
+
           <div className="flex justify-between mt-6 gap-3">
             {currentIdx > 0 && (
               <button
-                onClick={() => setCurrentIdx(i => i - 1)}
+                onClick={() => { setCurrentIdx(i => i - 1); setSubmitError(false) }}
                 className="px-4 py-2 text-sm text-stone-500 border border-stone-200 rounded-lg hover:bg-stone-50"
               >
                 Back
@@ -337,7 +344,7 @@ export default function ReflectPage() {
             <div className="flex-1" />
             {!isLast ? (
               <button
-                onClick={() => setCurrentIdx(i => i + 1)}
+                onClick={() => { setCurrentIdx(i => i + 1); setSubmitError(false) }}
                 disabled={!canAdvance()}
                 className="px-5 py-2 bg-green-700 text-white text-sm rounded-lg hover:bg-green-800 disabled:opacity-40 transition"
               >

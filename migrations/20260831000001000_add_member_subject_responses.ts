@@ -4,8 +4,8 @@ import type { MigrationBuilder } from 'node-pg-migrate'
 // voice, plus their _other free-text variants) now that Subject is no longer
 // a shared CHAT component. A single JSONB blob, matching the existing
 // convention of individual_reflections.response_data / reveal_ai.per_component,
-// keeps the new /api/reflections/subject endpoint a straight passthrough of
-// whatever the wizard collected.
+// keeps POST /api/reflections a straight passthrough of whatever the wizard
+// collected.
 export async function up(pgm: MigrationBuilder): Promise<void> {
   pgm.sql(`
     ALTER TABLE members ADD COLUMN IF NOT EXISTS subject_responses JSONB NOT NULL DEFAULT '{}'::jsonb;

@@ -49,12 +49,7 @@ export async function POST(req: Request) {
   )
   const reflectionsByMember = new Map<string, { divisionOfLabor: Record<string, unknown> }>()
   for (const row of reflectionRows) {
-    if (!reflectionsByMember.has(row.member_id)) {
-      reflectionsByMember.set(row.member_id, { divisionOfLabor: {} })
-    }
-    const entry = reflectionsByMember.get(row.member_id)
-    if (!entry) continue
-    if (row.component === 'division_of_labor') entry.divisionOfLabor = row.response_data
+    reflectionsByMember.set(row.member_id, { divisionOfLabor: row.response_data })
   }
 
   const memberInputs: TaskMemberInput[] = members.map(m => ({
