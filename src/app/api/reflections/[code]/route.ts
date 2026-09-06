@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { query, queryOne } from '@/lib/db'
 import { generateRevealComparison, MemberReflection } from '@/lib/ai'
-import { ChatComponent } from '@/lib/chat-components'
+import { CHAT_COMPONENTS, ChatComponent } from '@/lib/chat-components'
 import { requireTeamMember } from '@/lib/auth/team-access'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ code: string }> }) {
@@ -21,7 +21,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
     [teamId]
   )
 
-  // Count members who submitted all 6 components
+  // Count members who submitted all CHAT components
   const submittedRows = await query<{ member_id: string; count: number }>(
     `SELECT ir.member_id, COUNT(DISTINCT ir.component)::int AS count
      FROM individual_reflections ir
@@ -30,7 +30,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
      GROUP BY ir.member_id`,
     [teamId]
   )
-  const submitted = submittedRows.filter(r => r.count >= 6).length
+  const submitted = submittedRows.filter(r => r.count >= CHAT_COMPONENTS.length).length
 
   if (submitted < team_size) {
     return NextResponse.json({ ready: false, submitted, teamSize: team_size }, { status: 403 })
