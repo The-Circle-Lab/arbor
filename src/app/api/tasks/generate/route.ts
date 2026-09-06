@@ -44,23 +44,17 @@ export async function POST(req: Request) {
     `SELECT ir.member_id, ir.component, ir.response_data
      FROM individual_reflections ir
      JOIN members m ON m.id = ir.member_id
-     WHERE m.team_id = $1 AND ir.component IN ('subject', 'division_of_labor')`,
+     WHERE m.team_id = $1 AND ir.component = 'division_of_labor'`,
     [teamId]
   )
-  const reflectionsByMember = new Map<string, { subject: Record<string, unknown>; divisionOfLabor: Record<string, unknown> }>()
+  const reflectionsByMember = new Map<string, { divisionOfLabor: Record<string, unknown> }>()
   for (const row of reflectionRows) {
-    if (!reflectionsByMember.has(row.member_id)) {
-      reflectionsByMember.set(row.member_id, { subject: {}, divisionOfLabor: {} })
-    }
-    const entry = reflectionsByMember.get(row.member_id)!
-    if (row.component === 'subject') entry.subject = row.response_data
-    if (row.component === 'division_of_labor') entry.divisionOfLabor = row.response_data
+    reflectionsByMember.set(row.member_id, { divisionOfLabor: row.response_data })
   }
 
   const memberInputs: TaskMemberInput[] = members.map(m => ({
     id: m.id,
     displayName: m.display_name,
-    subject: reflectionsByMember.get(m.id)?.subject ?? {},
     divisionOfLabor: reflectionsByMember.get(m.id)?.divisionOfLabor ?? {},
   }))
 

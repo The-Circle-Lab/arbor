@@ -5,6 +5,7 @@
 // two routes can't silently drift apart on what counts as "ready".
 import { query } from './db'
 import { computePlantState, CheckinRow, PlantResult } from './plant-logic'
+import { CHAT_COMPONENTS } from './chat-components'
 
 export interface ReadinessCheckinRow extends CheckinRow {
   member_id: string
@@ -29,7 +30,7 @@ export async function getPlantReadiness(teamId: string, cycleNum: number): Promi
      GROUP BY ci.member_id`,
     [teamId, cycleNum]
   )
-  const allSubmitted = submittedRows.filter(r => r.count >= 6).length >= team_size
+  const allSubmitted = submittedRows.filter(r => r.count >= CHAT_COMPONENTS.length).length >= team_size
   if (!allSubmitted) return { ready: false }
 
   const checkinRows = await query<ReadinessCheckinRow>(

@@ -74,7 +74,7 @@ export interface RevealAIResult {
 }
 
 // Shared by generateRevealComparison and generateCheckinComparison — both ask
-// the model to analyze all six CHAT components in one call (componentAnalysisSchema
+// the model to analyze all five CHAT components in one call (componentAnalysisSchema
 // requires every key), then split that into a per-component comment map plus
 // the flagged subset.
 function splitComponentAnalysis(components: ComponentAnalysisResponse['components']): {
@@ -84,7 +84,6 @@ function splitComponentAnalysis(components: ComponentAnalysisResponse['component
   return {
     perComponent: {
       object: components.object.comment,
-      subject: components.subject.comment,
       division_of_labor: components.division_of_labor.comment,
       rules: components.rules.comment,
       tools: components.tools.comment,
@@ -108,11 +107,11 @@ export async function generateRevealComparison(members: MemberReflection[], proj
 
   const prompt = `You are analyzing a student team's individual reflections using CHAT (Cultural-Historical Activity Theory).
 ${contextSection}
-The team has ${members.length} members. Their individual reflections across six CHAT components are below.
+The team has ${members.length} members. Their individual reflections across five CHAT components are below.
 
 ${memberSummaries}
 
-For each of the six CHAT components (object, subject, division_of_labor, rules, tools, community), do two things:
+For each of the five CHAT components (object, division_of_labor, rules, tools, community), do two things:
 1. Write a 2-3 sentence plain-language comment on where the team aligns or where a gap exists. Name the CHAT component explicitly. Do not tell the team what to do — only name the gap or alignment. No jargon beyond the component name itself. Write it about the team as a whole, following the attribution rule below.
 2. Decide if this component should be FLAGGED (true/false). Flag it if there is a meaningful gap or potential misalignment that the team should discuss before proceeding.
 
@@ -214,7 +213,7 @@ ${agreementText}
 Their check-in responses:
 ${checkinText}
 
-For each of the six CHAT components (object, subject, division_of_labor, rules, tools, community), do two things:
+For each of the five CHAT components (object, division_of_labor, rules, tools, community), do two things:
 1. Write a 2-3 sentence plain-language comment on whether the team is holding to what they agreed, or where tension has appeared since. Reference the original agreement vs. what the team now reports. Name the CHAT component. Do not tell the team what to do — only name the gap or the alignment. No jargon beyond the component name. Write it about the team as a whole, following the attribution rule below.
 2. Decide if this component should be FLAGGED (true/false). Flag it if there is a "very_off" rating, a divergence between members, or drift from the original agreement that the team should discuss.
 
@@ -284,7 +283,6 @@ export interface TaskProjectContext {
 export interface TaskMemberInput {
   id: string
   displayName: string
-  subject: Record<string, unknown>
   divisionOfLabor: Record<string, unknown>
 }
 
@@ -341,9 +339,7 @@ export async function generateTaskSuggestions(
     .join('\n') || 'No agreement text available yet.'
 
   const memberSection = members.map(m => {
-    const preferredRole = m.subject.preferred_role
     const bits = [
-      preferredRole ? `Preferred contributor style: ${Array.isArray(preferredRole) ? preferredRole.join(', ') : preferredRole}` : '',
       m.divisionOfLabor.expected_role ? `Wants to lead: ${m.divisionOfLabor.expected_role}` : '',
       m.divisionOfLabor.fair_split ? `Fair split preference: ${m.divisionOfLabor.fair_split}` : '',
       m.divisionOfLabor.avoid ? `Wants to avoid: ${m.divisionOfLabor.avoid}` : '',

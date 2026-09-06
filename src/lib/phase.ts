@@ -40,14 +40,14 @@ export async function getTeamStatus(teamId: string): Promise<TeamStatus> {
      JOIN members m ON m.id = ir.member_id
      WHERE m.team_id = $1
      GROUP BY m.team_id
-     HAVING COUNT(DISTINCT ir.component) = 6`,
-    [teamId]
+     HAVING COUNT(DISTINCT ir.component) = $2`,
+    [teamId, CHAT_COMPONENTS.length]
   ).catch(() => [])
 
   const reflectionsSubmitted = reflRows[0]?.count ?? 0
   const allReflected = reflectionsSubmitted >= team_size
 
-  // All 6 agreements fully approved by all members
+  // All agreements fully approved by all members
   const agreedRows = await query<{ component: string; approvals: number }>(
     `SELECT a.component, COUNT(aa.member_id)::int AS approvals
      FROM agreements a
@@ -57,7 +57,7 @@ export async function getTeamStatus(teamId: string): Promise<TeamStatus> {
     [teamId]
   )
   const allAgreed =
-    agreedRows.length === 6 &&
+    agreedRows.length === CHAT_COMPONENTS.length &&
     agreedRows.every(r => r.approvals >= team_size)
 
   // Per-component approval counts — used to tell when re-flagged components
@@ -74,7 +74,7 @@ export async function getTeamStatus(teamId: string): Promise<TeamStatus> {
   const hasTasks = task_count > 0
   const tasksApproved = hasTasks && taskApprovalCount >= team_size
 
-  // Check-in counts (members who submitted all 6 components for a cycle)
+  // Check-in counts (members who submitted all components for a cycle)
   const checkin1Count = await countCheckinSubmissions(teamId, 1)
   const checkin2Count = await countCheckinSubmissions(teamId, 2)
 

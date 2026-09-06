@@ -41,7 +41,6 @@ const RESOLUTION_TUTORIAL_KEY = 'arbour-agree-resolution-tutorial-seen'
 
 const RESOLUTION_PLACEHOLDERS: Record<ChatComponent, string> = {
   object: 'e.g. Annie wants a polished final product, Alan wants to learn new skills. We agreed to aim for both by splitting research and presentation.',
-  subject: 'e.g. Annie sees herself leading coordination, Alan prefers deep execution. We agreed on a lead/support split that rotates per task.',
   division_of_labor: 'e.g. Annie takes design and front-end, Alan takes data and testing. We\'ll check in if scope shifts.',
   rules: 'e.g. We agreed to use Slack for daily updates, meet Thursdays, and make decisions by consensus unless one person owns that area.',
   tools: 'e.g. We agreed on Figma for design, GitHub for code, and Notion for notes. Annie will set up shared access.',

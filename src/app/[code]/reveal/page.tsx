@@ -8,7 +8,6 @@ import { DiscussionTimerStartModal } from '@/components/DiscussionTimerStartModa
 
 const NEGOTIATION_NUDGES: Record<ChatComponent, string> = {
   object:            'This difference is worth talking about: what does success actually mean to each of you, in practice?',
-  subject:           'This difference is worth talking about: what kind of role do you each picture yourself in, day to day?',
   division_of_labor: 'This difference is worth talking about: who owns what, and does that match what you\'re each expecting to carry?',
   rules:             'This difference is worth talking about: what does it actually feel like to work well together, and do you mean the same thing?',
   tools:             'This difference is worth talking about: can you land on a specific list of tools you\'ll both actually use?',
