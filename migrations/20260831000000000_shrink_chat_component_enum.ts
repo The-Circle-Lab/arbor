@@ -20,6 +20,10 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
 
     UPDATE reveal_ai SET per_component = per_component - 'subject';
     UPDATE reveal_ai SET flagged_components = array_remove(flagged_components, 'subject');
+    -- plant_states.flagged_components is a cached snapshot from a prior
+    -- computePlantState() run (back when 'subject' was a checkin question),
+    -- not a live join — it needs the same scrub as reveal_ai above.
+    UPDATE plant_states SET flagged_components = array_remove(flagged_components, 'subject');
 
     ALTER TABLE individual_reflections ALTER COLUMN component TYPE TEXT;
     ALTER TABLE individual_reflections ADD CONSTRAINT individual_reflections_component_check

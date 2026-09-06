@@ -5,10 +5,13 @@ const FLAG_THRESHOLD = 0.5
 const DIVERGENCE_BONUS_LARGE = 0.5  // one aligned, one very_off
 const DIVERGENCE_BONUS_SMALL = 0.25 // one aligned, one slightly_off
 
+// Calibrated as fractions of CHAT_COMPONENTS.length (5): thriving 0%,
+// doing_okay up to 40%, wilting up to 60%, dead above that — close to the
+// original 0%/33%/67% split from when there were 6 flaggable components.
 const STATE_THRESHOLDS = {
   thriving: 0,   // 0 flagged
   doing_okay: 2, // 1-2 flagged
-  wilting: 4,    // 3-4 flagged
+  wilting: 3,    // 3 flagged
 } as const
 
 export interface CheckinRow {
@@ -43,7 +46,7 @@ export interface PlantResult {
 export function flagCountToLevelDrop(flagCount: number): number {
   if (flagCount <= 0) return 0
   if (flagCount <= 2) return 1
-  if (flagCount <= 4) return 2
+  if (flagCount <= 3) return 2
   return 3
 }
 

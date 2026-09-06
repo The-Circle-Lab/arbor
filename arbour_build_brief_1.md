@@ -44,7 +44,7 @@ Note: all tables involving "the other member" comparisons (reveal, check-in dive
 Fastest possible: one person creates a team (gets a code), the other joins with that code + their name. No real auth needed.
 
 ### 2. Individual reflection (Part 1)
-Each person answers, privately, mapped to all six CHAT components:
+Each person answers, privately, mapped to all five CHAT components (plus Subject, collected as personal profile info only):
 
 **Object**
 - What does a successful outcome look like to you, specifically?
