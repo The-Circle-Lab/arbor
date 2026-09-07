@@ -75,3 +75,12 @@ export function computeTeamSubjectLevel(subjectResponses: SubjectResponses[]): T
 
   return { positionSpread, voiceDenominator, voiceBelowV4, level }
 }
+
+export async function storeTeamEngagementLevel(teamId: string, level: TeamEngagementLevel): Promise<void> {
+  await query(
+    `UPDATE teams
+     SET position_spread = $2, voice_denominator = $3, voice_below_v4 = $4, level = $5
+     WHERE id = $1`,
+    [teamId, level.positionSpread, level.voiceDenominator, level.voiceBelowV4, level.level]
+  )
+}
