@@ -1,3 +1,5 @@
+import { query } from './db'
+
 export interface SubjectResponses {
   position?: string[]
   voice?: string
@@ -36,4 +38,40 @@ export function computeSubjectScores(subjectResponses: SubjectResponses): Subjec
   const voice = typeof voiceAnswer === 'string' ? (VOICE_POINTS[voiceAnswer] ?? null) : null
 
   return { position, voice }
+}
+
+export type EngagementLevel = 'low' | 'medium' | 'high'
+
+export interface TeamEngagementLevel {
+  positionSpread: number | null
+  voiceDenominator: number
+  voiceBelowV4: number
+  level: EngagementLevel
+}
+
+export function computeTeamSubjectLevel(subjectResponses: SubjectResponses[]): TeamEngagementLevel {
+  const scores = subjectResponses.map(computeSubjectScores)
+
+  const positionValues = scores
+    .map(s => s.position)
+    .filter((value): value is number => value !== null)
+  const positionSpread =
+    positionValues.length >= 2 ? Math.max(...positionValues) - Math.min(...positionValues) : null
+
+  const voiceValues = scores
+    .map(s => s.voice)
+    .filter((value): value is number => value !== null)
+  const voiceDenominator = voiceValues.length
+  const voiceBelowV4 = voiceValues.filter(value => value < 4).length
+
+  const isWide = positionSpread !== null && positionSpread >= 3
+
+  const level: EngagementLevel =
+    isWide && voiceBelowV4 >= Math.floor(voiceDenominator / 2) && voiceBelowV4 >= 1
+      ? 'high'
+      : isWide || voiceBelowV4 >= 1
+        ? 'medium'
+        : 'low'
+
+  return { positionSpread, voiceDenominator, voiceBelowV4, level }
 }
