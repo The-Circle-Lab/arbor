@@ -1,4 +1,5 @@
 import { query } from './db'
+import { getTeamSubjectResponses } from './team-members'
 
 export interface SubjectResponses {
   position?: string[]
@@ -83,4 +84,11 @@ export async function storeTeamEngagementLevel(teamId: string, level: TeamEngage
      WHERE id = $1`,
     [teamId, level.positionSpread, level.voiceDenominator, level.voiceBelowV4, level.level]
   )
+}
+
+export async function refreshTeamEngagementLevel(teamId: string): Promise<TeamEngagementLevel> {
+  const subjectResponses = await getTeamSubjectResponses(teamId)
+  const level = computeTeamSubjectLevel(subjectResponses)
+  await storeTeamEngagementLevel(teamId, level)
+  return level
 }
