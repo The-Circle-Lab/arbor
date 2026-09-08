@@ -1,10 +1,25 @@
 import { query } from './db'
 import { getTeamSubjectResponses } from './team-members'
+import { SUBJECT_QUESTIONS } from './chat-components'
 
 export interface SubjectResponses {
   position?: string[]
   voice?: string
   [key: string]: unknown
+}
+
+function assertPointsMatchQuestion(questionId: string, points: Record<string, number>): void {
+  const question = SUBJECT_QUESTIONS.find(q => q.id === questionId)
+  if (!question || !question.options) throw new Error(`Missing options for subject question "${questionId}"`)
+  const expected = question.options.filter(option => option !== 'Other')
+  const missing = expected.filter(option => !(option in points))
+  const extra = Object.keys(points).filter(option => !expected.includes(option))
+  if (missing.length > 0 || extra.length > 0) {
+    throw new Error(
+      `Scoring points for "${questionId}" are out of sync with SUBJECT_QUESTIONS. ` +
+        `Missing: [${missing.join(', ')}]. Extra: [${extra.join(', ')}].`
+    )
+  }
 }
 
 export const POSITION_POINTS: Record<string, number> = {
@@ -15,6 +30,7 @@ export const POSITION_POINTS: Record<string, number> = {
   'Took what was assigned and delivered it': 2,
   'Filled whatever was left once others had chosen': 1,
 }
+assertPointsMatchQuestion('position', POSITION_POINTS)
 
 export const VOICE_POINTS: Record<string, number> = {
   'Said so in the group conversation': 4,
@@ -22,6 +38,7 @@ export const VOICE_POINTS: Record<string, number> = {
   'Waited to see whether someone else would raise it': 2,
   'Went along with it and adjusted my own work around it': 1,
 }
+assertPointsMatchQuestion('voice', VOICE_POINTS)
 
 export interface SubjectScores {
   position: number | null

@@ -1,5 +1,5 @@
 import { query } from './db'
-import { SubjectResponses } from './subject-scoring'
+import type { SubjectResponses } from './subject-scoring'
 
 export interface TeamMember {
   id: string
