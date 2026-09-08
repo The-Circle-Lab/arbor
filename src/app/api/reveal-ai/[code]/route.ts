@@ -3,8 +3,9 @@ export const maxDuration = 60
 import { NextResponse } from 'next/server'
 import { query, queryOne } from '@/lib/db'
 import { generateRevealComparison, MemberReflection } from '@/lib/ai'
-import { ChatComponent } from '@/lib/chat-components'
+import { CHAT_COMPONENTS, ChatComponent } from '@/lib/chat-components'
 import { requireTeamMember } from '@/lib/auth/team-access'
+import { refreshTeamEngagementLevel } from '@/lib/subject-scoring'
 
 export async function POST(_req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
@@ -19,6 +20,11 @@ export async function POST(_req: Request, { params }: { params: Promise<{ code: 
     [teamId]
   )
   if (cached) return NextResponse.json(cached)
+
+  const [{ team_size }] = await query<{ team_size: number }>(
+    'SELECT COUNT(*)::int AS team_size FROM members WHERE team_id = $1',
+    [teamId]
+  )
 
   // Build member reflections
   const reflections = await query<{
@@ -45,6 +51,15 @@ export async function POST(_req: Request, { params }: { params: Promise<{ code: 
     memberMap.get(row.member_id)!.responses[row.component as ChatComponent] = row.response_data
   }
 
+  // Require every member to have submitted all components before generating —
+  // otherwise this would persist a reveal_ai row from a partial team, which
+  // permanently blocks the reflections poller's own (complete) generation.
+  const submitted = Array.from(memberMap.values())
+    .filter(member => Object.keys(member.responses).length >= CHAT_COMPONENTS.length).length
+  if (submitted < team_size) {
+    return NextResponse.json({ error: 'Team has not finished reflections' }, { status: 403 })
+  }
+
   const members = Array.from(memberMap.values())
   const result = await generateRevealComparison(members)
 
@@ -54,6 +69,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ code: 
      ON CONFLICT (team_id) DO NOTHING`,
     [teamId, JSON.stringify(result.perComponent), result.flaggedComponents]
   )
+
+  await refreshTeamEngagementLevel(teamId)
 
   return NextResponse.json({
     per_component: result.perComponent,

@@ -1,4 +1,5 @@
 import { query } from './db'
+import type { SubjectResponses } from './subject-scoring'
 
 export interface TeamMember {
   id: string
@@ -19,4 +20,15 @@ export async function getTeamMembers(teamId: string): Promise<TeamMember[]> {
      ORDER BY m.joined_at`,
     [teamId]
   )
+}
+
+export async function getTeamSubjectResponses(teamId: string): Promise<SubjectResponses[]> {
+  const rows = await query<{ subject_responses: SubjectResponses }>(
+    `SELECT m.subject_responses
+     FROM members m
+     WHERE m.team_id = $1
+     ORDER BY m.joined_at`,
+    [teamId]
+  )
+  return rows.map(row => row.subject_responses)
 }
