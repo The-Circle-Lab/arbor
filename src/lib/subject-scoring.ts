@@ -8,6 +8,9 @@ export interface SubjectResponses {
   [key: string]: unknown
 }
 
+// TODO: once a test suite exists, add a unit test that calls this for both
+// 'position' and 'voice' to catch drift between SUBJECT_QUESTIONS and the
+// POSITION_POINTS/VOICE_POINTS maps in CI instead of at first production request.
 function assertPointsMatchQuestion(questionId: string, points: Record<string, number>): void {
   const question = SUBJECT_QUESTIONS.find(q => q.id === questionId)
   if (!question || !question.options) throw new Error(`Missing options for subject question "${questionId}"`)
