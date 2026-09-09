@@ -3,7 +3,7 @@ import { query, queryOne } from '@/lib/db'
 import { generateRevealComparison, MemberReflection } from '@/lib/ai'
 import { CHAT_COMPONENTS, ChatComponent } from '@/lib/chat-components'
 import { requireTeamMember } from '@/lib/auth/team-access'
-import { refreshTeamEngagementLevel } from '@/lib/subject-scoring'
+import { refreshTeamEngagementLevel } from '@/lib/db/subject-scoring'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
@@ -71,9 +71,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
 
     generateRevealComparison(Array.from(memberMap.values()), projectContext)
       .then(result => query(
-        `INSERT INTO reveal_ai (team_id, per_component, flagged_components)
-         VALUES ($1, $2, $3) ON CONFLICT (team_id) DO NOTHING`,
-        [teamId, JSON.stringify(result.perComponent), result.flaggedComponents]
+        `INSERT INTO reveal_ai (team_id, per_component, flagged_components, split_reasons)
+         VALUES ($1, $2, $3, $4) ON CONFLICT (team_id) DO NOTHING`,
+        [teamId, JSON.stringify(result.perComponent), result.flaggedComponents, JSON.stringify(result.splitReasons)]
       ))
       .then(() => refreshTeamEngagementLevel(teamId))
       .catch(e => console.error('reveal-ai generation error:', e))

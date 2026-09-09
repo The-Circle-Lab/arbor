@@ -5,7 +5,7 @@ import { query, queryOne } from '@/lib/db'
 import { generateRevealComparison, MemberReflection } from '@/lib/ai'
 import { CHAT_COMPONENTS, ChatComponent } from '@/lib/chat-components'
 import { requireTeamMember } from '@/lib/auth/team-access'
-import { refreshTeamEngagementLevel } from '@/lib/subject-scoring'
+import { refreshTeamEngagementLevel } from '@/lib/db/subject-scoring'
 
 export async function POST(_req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
@@ -15,8 +15,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ code: 
   const teamId = membership.teamId
 
   // Return cached result if exists
-  const cached = await queryOne<{ per_component: Record<ChatComponent, string>; flagged_components: string[] }>(
-    'SELECT per_component, flagged_components FROM reveal_ai WHERE team_id = $1',
+  const cached = await queryOne<{ per_component: Record<ChatComponent, string>; flagged_components: string[]; split_reasons: Record<ChatComponent, string> | null }>(
+    'SELECT per_component, flagged_components, split_reasons FROM reveal_ai WHERE team_id = $1',
     [teamId]
   )
   if (cached) return NextResponse.json(cached)
@@ -64,10 +64,10 @@ export async function POST(_req: Request, { params }: { params: Promise<{ code: 
   const result = await generateRevealComparison(members)
 
   await query(
-    `INSERT INTO reveal_ai (team_id, per_component, flagged_components)
-     VALUES ($1, $2, $3)
+    `INSERT INTO reveal_ai (team_id, per_component, flagged_components, split_reasons)
+     VALUES ($1, $2, $3, $4)
      ON CONFLICT (team_id) DO NOTHING`,
-    [teamId, JSON.stringify(result.perComponent), result.flaggedComponents]
+    [teamId, JSON.stringify(result.perComponent), result.flaggedComponents, JSON.stringify(result.splitReasons)]
   )
 
   await refreshTeamEngagementLevel(teamId)
@@ -75,6 +75,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ code: 
   return NextResponse.json({
     per_component: result.perComponent,
     flagged_components: result.flaggedComponents,
+    split_reasons: result.splitReasons,
   })
 }
 
@@ -84,8 +85,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
   const membership = await requireTeamMember(code)
   if (!membership) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const cached = await queryOne<{ per_component: Record<ChatComponent, string>; flagged_components: string[] }>(
-    'SELECT per_component, flagged_components FROM reveal_ai WHERE team_id = $1',
+  const cached = await queryOne<{ per_component: Record<ChatComponent, string>; flagged_components: string[]; split_reasons: Record<ChatComponent, string> | null }>(
+    'SELECT per_component, flagged_components, split_reasons FROM reveal_ai WHERE team_id = $1',
     [membership.teamId]
   )
   if (!cached) return NextResponse.json({ ready: false }, { status: 404 })

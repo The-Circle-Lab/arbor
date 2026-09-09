@@ -2,7 +2,7 @@ import { CHAT_COMPONENTS, ChatComponent, COMPONENT_LABELS } from './chat-compone
 import { sendAiApiRequest } from './ai-api'
 
 interface ComponentAnalysisResponse {
-  components: Record<ChatComponent, { comment: string; flagged: boolean }>
+  components: Record<ChatComponent, { comment: string; flagged: boolean; split_reason: string }>
 }
 
 const componentAnalysisSchema = {
@@ -15,8 +15,9 @@ const componentAnalysisSchema = {
         properties: {
           comment: { type: 'string' },
           flagged: { type: 'boolean' },
+          split_reason: { type: 'string' },
         },
-        required: ['comment', 'flagged'],
+        required: ['comment', 'flagged', 'split_reason'],
         additionalProperties: false,
       }])),
       required: [...CHAT_COMPONENTS],
@@ -24,6 +25,13 @@ const componentAnalysisSchema = {
     },
   },
   required: ['components'],
+  additionalProperties: false,
+}
+
+const misalignmentClauseSchema = {
+  type: 'object',
+  properties: { clause: { type: 'string' } },
+  required: ['clause'],
   additionalProperties: false,
 }
 
@@ -71,6 +79,7 @@ export interface MemberReflection {
 export interface RevealAIResult {
   perComponent: Record<ChatComponent, string>
   flaggedComponents: ChatComponent[]
+  splitReasons: Record<ChatComponent, string>
 }
 
 // Shared by generateRevealComparison and generateCheckinComparison — both ask
@@ -80,6 +89,7 @@ export interface RevealAIResult {
 function splitComponentAnalysis(components: ComponentAnalysisResponse['components']): {
   perComponent: Record<ChatComponent, string>
   flaggedComponents: ChatComponent[]
+  splitReasons: Record<ChatComponent, string>
 } {
   return {
     perComponent: {
@@ -90,6 +100,13 @@ function splitComponentAnalysis(components: ComponentAnalysisResponse['component
       community: components.community.comment,
     },
     flaggedComponents: CHAT_COMPONENTS.filter(c => components[c].flagged),
+    splitReasons: {
+      object: components.object.split_reason,
+      division_of_labor: components.division_of_labor.split_reason,
+      rules: components.rules.split_reason,
+      tools: components.tools.split_reason,
+      community: components.community.split_reason,
+    },
   }
 }
 
@@ -111,13 +128,14 @@ The team has ${members.length} members. Their individual reflections across five
 
 ${memberSummaries}
 
-For each of the five CHAT components (object, division_of_labor, rules, tools, community), do two things:
+For each of the five CHAT components (object, division_of_labor, rules, tools, community), do three things:
 1. Write a 2-3 sentence plain-language comment on where the team aligns or where a gap exists. Name the CHAT component explicitly. Do not tell the team what to do — only name the gap or alignment. No jargon beyond the component name itself. Write it about the team as a whole, following the attribution rule below.
 2. Decide if this component should be FLAGGED (true/false). Flag it if there is a meaningful gap or potential misalignment that the team should discuss before proceeding.
+3. Write a short causal clause — NOT a full sentence — that grammatically completes the phrase "...split on this, because ___" (e.g. "some of you are prioritizing polish while others are prioritizing meeting the deadline"). Write this even for components you don't flag; it will only be shown when the component is flagged.
 
 ${NO_MEMBER_ATTRIBUTION_RULE}`
 
-  const message = await sendAiApiRequest<ComponentAnalysisResponse>('fast_model', 1500, prompt, componentAnalysisSchema)
+  const message = await sendAiApiRequest<ComponentAnalysisResponse>('fast_model', 1800, prompt, componentAnalysisSchema)
 
   return splitComponentAnalysis(message.components)
 }
@@ -172,6 +190,32 @@ Rewrite the agreement as 1-2 sentences in first-person plural (starting with "We
   return message.agreement
 }
 
+export async function generateMisalignmentSynthesis(
+  component: ChatComponent,
+  anonymizedSubmissions: string[],
+  priorAttempt?: { draftText: string }
+): Promise<string> {
+  const submissionsText = anonymizedSubmissions.length > 0
+    ? anonymizedSubmissions.map((s, i) => `Proposal ${i + 1}: ${s}`).join('\n\n')
+    : 'No proposals were submitted — team members either skipped this step or nothing came through.'
+
+  const priorSection = priorAttempt
+    ? `\nA previous draft was rejected by the team:\n"${priorAttempt.draftText}"\nWrite a materially different attempt that still draws on the proposals below — don't just reword the rejected draft.`
+    : ''
+
+  const prompt = `A student team had a meaningful disagreement on one component of their group agreement (${COMPONENT_LABELS[component]}) using CHAT (Cultural-Historical Activity Theory). Instead of discussing it live, each member privately proposed what the group should do about it. Their proposals (anonymous, unordered) are below.
+
+${submissionsText}
+${priorSection}
+
+Synthesize these into a single 1-3 sentence proposed group agreement clause, in first-person plural (starting with "We..."), that draws on the range of proposals above as fairly as possible. Do not favor one proposal outright if they conflict — find real common ground or an explicit compromise. Plain language, no jargon. Be specific to what was actually proposed — do not invent commitments nobody suggested.
+
+${NO_MEMBER_ATTRIBUTION_RULE}`
+
+  const message = await sendAiApiRequest<{ clause: string }>('default_model', 400, prompt, misalignmentClauseSchema)
+  return message.clause
+}
+
 export interface CheckinSummary {
   displayName: string
   checkins: Partial<Record<ChatComponent, { rating?: string; notes?: Record<string, string> }>>
@@ -180,6 +224,7 @@ export interface CheckinSummary {
 export interface CheckinComparisonResult {
   perComponent: Record<ChatComponent, string>
   flaggedComponents: ChatComponent[]
+  splitReasons: Record<ChatComponent, string>
 }
 
 export async function generateCheckinComparison(
@@ -213,13 +258,14 @@ ${agreementText}
 Their check-in responses:
 ${checkinText}
 
-For each of the five CHAT components (object, division_of_labor, rules, tools, community), do two things:
+For each of the five CHAT components (object, division_of_labor, rules, tools, community), do three things:
 1. Write a 2-3 sentence plain-language comment on whether the team is holding to what they agreed, or where tension has appeared since. Reference the original agreement vs. what the team now reports. Name the CHAT component. Do not tell the team what to do — only name the gap or the alignment. No jargon beyond the component name. Write it about the team as a whole, following the attribution rule below.
 2. Decide if this component should be FLAGGED (true/false). Flag it if there is a "very_off" rating, a divergence between members, or drift from the original agreement that the team should discuss.
+3. Write a short causal clause — NOT a full sentence — that grammatically completes the phrase "...shifted on this, because ___" (this is about what changed since the team's original agreement, not the original disagreement — e.g. "the workload picked up faster than expected for some of you while others had more time freed up"). Write this even for components you don't flag; it will only be shown when the component is flagged.
 
 ${NO_MEMBER_ATTRIBUTION_RULE}`
 
-  const message = await sendAiApiRequest<ComponentAnalysisResponse>('fast_model', 1500, prompt, componentAnalysisSchema)
+  const message = await sendAiApiRequest<ComponentAnalysisResponse>('fast_model', 1800, prompt, componentAnalysisSchema)
 
   return splitComponentAnalysis(message.components)
 }
