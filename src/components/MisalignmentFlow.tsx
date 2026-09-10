@@ -165,7 +165,7 @@ export function MisalignmentFlow({ component, memberId, isProjectManager, cycleN
           rows={3}
           value={submissionText}
           onChange={e => setSubmissionText(e.target.value)}
-          placeholder="What do you think the team should agree to here?"
+          placeholder="Input your thoughts here…"
         />
         <div className="flex gap-2 mt-2">
           <button
