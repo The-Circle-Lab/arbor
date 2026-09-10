@@ -9,12 +9,6 @@ import {
   INDIVIDUAL_REFLECTION,
   REVEAL,
   AGREEING,
-  TASKS,
-  CHECKIN_1,
-  PLANT_1,
-  CHECKIN_2,
-  PLANT_2,
-  DONE,
 } from '@/lib/team-stage'
 
 interface TeamData {
@@ -64,11 +58,7 @@ export default function TeamHub() {
         else if (isReflecting) router.push(`/${code}/reflect`)
         else if (stage === REVEAL) router.push(`/${code}/reveal`)
         else if (stage === AGREEING) router.push(`/${code}/agree`)
-        else if (stage === CHECKIN_1) router.push(`/${code}/checkin/1`)
-        else if (stage === PLANT_1) router.push(`/${code}/plant/1`)
-        else if (stage === CHECKIN_2) router.push(`/${code}/checkin-intro`)
-        else if (stage === PLANT_2) router.push(`/${code}/plant/2`)
-        else if (stage === DONE) router.push(`/${code}/start`)
+        else router.push(`/${code}/start`)
       } catch { /* retry on next poll */ }
     }
 

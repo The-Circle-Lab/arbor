@@ -4,6 +4,7 @@ import { getTeamStatus } from '@/lib/phase'
 import { getCurrentPlantState } from '@/lib/plant-health'
 import { requireTeamMember } from '@/lib/auth/team-access'
 import { getTeamMembers } from '@/lib/team-members'
+import { getCheckinAccess } from '@/lib/checkin-schedule'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
@@ -23,6 +24,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
     getTeamStatus(team.id),
     getCurrentPlantState(team.id),
   ])
+  const checkinAccess = await getCheckinAccess(team.id, status)
 
-  return NextResponse.json({ ...team, members, status, plant_state })
+  return NextResponse.json({ ...team, members, status, plant_state, checkinAccess })
 }
