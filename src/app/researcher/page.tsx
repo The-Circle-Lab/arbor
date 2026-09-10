@@ -2,11 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useInstructorCourses } from '@/lib/instructor-context'
+import { useResearcherCourses } from '@/lib/researcher-context'
 import { PlantVisual, STATE_LABELS, STATE_COLORS, isPlantType, type PlantState } from '@/components/PlantVisual'
-import { Modal } from '@/components/Modal'
 import { STAGE_LABELS } from '@/lib/team-stage'
-import { useCreateCourse, CreateCourseForm, CreateCourseSuccess } from '@/components/instructor/CreateCourseFlow'
 import type { CourseTeamCounters } from '@/lib/course-team-counters'
 
 interface CourseTeam {
@@ -19,16 +17,18 @@ interface CourseTeam {
   state: PlantState
 }
 
-export default function InstructorDashboardPage() {
+// Read-only copy of src/app/instructor/page.tsx — same course → team
+// plant-health grid, scoped to every course in the system (via
+// useResearcherCourses) instead of just courses the user owns/was added to,
+// and with no create/edit/delete surface: no "+ New course" welcome flow,
+// just a plain empty state when no courses exist.
+export default function ResearcherDashboardPage() {
   const router = useRouter()
-  const { courses, loading: coursesLoading, error: coursesError, selectedCourseId, refreshCourses } = useInstructorCourses()
+  const { courses, loading: coursesLoading, error: coursesError, selectedCourseId, refreshCourses } = useResearcherCourses()
   const [teams, setTeams] = useState<CourseTeam[] | null>(null)
   const [counters, setCounters] = useState<CourseTeamCounters | null>(null)
   const [loadingTeams, setLoadingTeams] = useState(false)
   const [teamsError, setTeamsError] = useState('')
-  const { name: newCourseName, setName: setNewCourseName, creating, error, createdCode, submit: handleCreateCourse, reset: resetCreateCourse } = useCreateCourse({
-    onCreated: () => refreshCourses(),
-  })
   const [copied, setCopied] = useState(false)
 
   const selectedCourse = courses.find(c => c.id === selectedCourseId) ?? null
@@ -53,7 +53,7 @@ export default function InstructorDashboardPage() {
     setLoadingTeams(true)
     const poll = async () => {
       try {
-        const res = await fetch(`/api/courses/${selectedCourseId}/teams`)
+        const res = await fetch(`/api/researcher/courses/${selectedCourseId}/teams`)
         if (!res.ok) throw new Error('Request failed')
         const data = await res.json()
         if (!ignore) { setTeams(data.teams); setCounters(data.counters); setTeamsError('') }
@@ -91,28 +91,18 @@ export default function InstructorDashboardPage() {
     )
   }
 
-  const showWelcome = courses.length === 0
+  const showEmpty = courses.length === 0
   const needsAttention = (teams ?? []).filter(t => t.state === 'wilting' || t.state === 'dead')
 
-  return (
-    <>
-    {showWelcome ? (
-      <main className="min-h-screen bg-stone-50 p-4 md:p-8">
-        <div className="max-w-md mx-auto">
-          <h1 className="text-2xl font-bold text-stone-800 mb-2">Welcome</h1>
-          <p className="text-stone-500 text-sm mb-6">Create your first course to start tracking your students&apos; teams.</p>
-          <div className="bg-white rounded-2xl shadow-sm border border-stone-100 p-6">
-            <CreateCourseForm
-              name={newCourseName}
-              onNameChange={setNewCourseName}
-              onSubmit={handleCreateCourse}
-              creating={creating}
-              error={error}
-            />
-          </div>
-        </div>
+  if (showEmpty) {
+    return (
+      <main className="min-h-screen bg-stone-50 flex items-center justify-center">
+        <p className="text-stone-400 text-sm italic">No courses exist yet.</p>
       </main>
-    ) : (
+    )
+  }
+
+  return (
     <main className="min-h-screen bg-stone-50 p-4 md:p-8">
       <div className="max-w-5xl mx-auto">
         <div className="mb-6">
@@ -174,7 +164,7 @@ export default function InstructorDashboardPage() {
             {teams.map(team => (
               <button
                 key={team.id}
-                onClick={() => router.push(`/instructor/teams/${team.id}`)}
+                onClick={() => router.push(`/researcher/teams/${team.id}`)}
                 className="w-36 flex flex-col items-center text-center gap-1 bg-white rounded-2xl shadow-sm border border-stone-100 p-3 hover:border-green-600 transition"
               >
                 <PlantVisual
@@ -195,14 +185,5 @@ export default function InstructorDashboardPage() {
         )}
       </div>
     </main>
-    )}
-
-    <Modal open={!!createdCode} labelledBy="course-created-title" onClose={resetCreateCourse}>
-      <div className="p-6">
-        <h2 id="course-created-title" className="text-lg font-bold text-stone-800 mb-4">Course created</h2>
-        {createdCode && <CreateCourseSuccess joinCode={createdCode} onDone={resetCreateCourse} doneLabel="Got it" />}
-      </div>
-    </Modal>
-    </>
   )
 }

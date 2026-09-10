@@ -1,13 +1,13 @@
 import { NextResponse } from 'next/server'
 import { query } from '@/lib/db'
-import { requireCourseAccess } from '@/lib/auth/instructor'
+import { requireResearcherCourse } from '@/lib/auth/researcher'
 import { levelToState, DEFAULT_LEVEL } from '@/lib/plant-health'
 import { getCourseTeamCounters } from '@/lib/course-team-counters'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ courseId: string }> }) {
   try {
     const { courseId } = await params
-    const userId = await requireCourseAccess(courseId)
+    const userId = await requireResearcherCourse(courseId)
     if (!userId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     const rows = await query<{
@@ -49,7 +49,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ courseI
 
     return NextResponse.json({ teams, counters })
   } catch (e) {
-    console.error('GET /api/courses/[courseId]/teams error:', e)
+    console.error('GET /api/researcher/courses/[courseId]/teams error:', e)
     return NextResponse.json({ error: String(e) }, { status: 500 })
   }
 }

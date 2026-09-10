@@ -12,14 +12,21 @@ export const CHECKIN_2 = 7
 export const PLANT_2 = 8
 export const DONE = 9
 
+// The label wording intentionally doesn't mirror the constant names above:
+// CHECKIN_1/PLANT_1/CHECKIN_2 are reached as soon as the *previous* step
+// finishes and the next one hasn't started yet (see recompute_team_stage()
+// in migrations/20260910010002000_recompute_team_stage_drop_tasks.ts), so
+// e.g. stage CHECKIN_1 means "agreement done, check-in 1 not started" and
+// stage PLANT_1/CHECKIN_2 both mean "check-in 1 done, check-in 2 not
+// started" (whether or not its flagged tension has been resolved yet).
 export const STAGE_LABELS: Record<number, string> = {
   [TEAM_CREATION]: 'Setting up the team',
   [INDIVIDUAL_REFLECTION]: 'Reflecting individually',
   [REVEAL]: 'Comparing reflections',
   [AGREEING]: 'Writing team agreement',
-  [CHECKIN_1]: 'Check-in 1',
-  [PLANT_1]: 'Reviewing check-in 1',
-  [CHECKIN_2]: 'Check-in 2',
+  [CHECKIN_1]: 'Agreement done',
+  [PLANT_1]: 'Check-in 1 done',
+  [CHECKIN_2]: 'Check-in 1 done',
   [PLANT_2]: 'Reviewing check-in 2',
   [DONE]: 'Done',
 }

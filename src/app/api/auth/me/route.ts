@@ -8,7 +8,7 @@ export async function GET() {
     return NextResponse.json({ user: null, memberships: [] })
   }
 
-  const user = await queryOne<{ id: string; email: string; display_name: string; pronouns: string | null; role: 'student' | 'instructor' }>(
+  const user = await queryOne<{ id: string; email: string; display_name: string; pronouns: string | null; role: 'student' | 'instructor' | 'researcher' }>(
     'SELECT id, email, display_name, pronouns, role FROM users WHERE id = $1',
     [userId]
   )

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArbourLogo } from '@/components/ArbourLogo'
 import { WaitingRoom } from '@/components/WaitingRoom'
-import { useSession, isInstructorUser } from '@/lib/session'
+import { useSession, isInstructorUser, isResearcherUser } from '@/lib/session'
 
 export default function LandingPage() {
   const router = useRouter()
@@ -20,6 +20,7 @@ export default function LandingPage() {
     if (loading || submitting) return
     if (!user) { router.replace('/login'); return }
     if (isInstructorUser(user)) { router.replace('/instructor'); return }
+    if (isResearcherUser(user)) { router.replace('/researcher'); return }
     if (memberships.length === 1) router.replace(`/${memberships[0].join_code}`)
   }, [loading, user, memberships, submitting, router])
 
@@ -66,10 +67,11 @@ export default function LandingPage() {
   }
 
   // Loading, not-yet-authenticated (Proxy redirects momentarily), an
-  // instructor (auto-redirecting to /instructor), or the single-team case
+  // instructor (auto-redirecting to /instructor), a researcher
+  // (auto-redirecting to /researcher), or the single-team case
   // (auto-redirecting into that team) all show the same waiting state rather
   // than flashing the create/join UI underneath.
-  if (loading || !user || isInstructorUser(user) || memberships.length === 1) {
+  if (loading || !user || isInstructorUser(user) || isResearcherUser(user) || memberships.length === 1) {
     return (
       <main className="min-h-screen bg-stone-50 flex items-center justify-center p-6">
         <WaitingRoom message="Loading" subMessage="Just a moment" />

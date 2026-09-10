@@ -1,8 +1,9 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useSession } from '@/lib/session'
+import { useSession, isInstructorUser, isResearcherUser } from '@/lib/session'
 import { CourseSwitcher } from '@/components/instructor/CourseSwitcher'
+import { ResearcherCourseSwitcher } from '@/components/researcher/ResearcherCourseSwitcher'
 
 export function UserBar() {
   const router = useRouter()
@@ -23,7 +24,10 @@ export function UserBar() {
         Logged in as <span className="font-medium text-stone-600">{user.display_name}</span>
       </span>
       <div className="flex items-center gap-3">
-        <CourseSwitcher />
+        {isInstructorUser(user) ? <CourseSwitcher /> : isResearcherUser(user) ? <ResearcherCourseSwitcher /> : null}
+        <button onClick={() => router.push('/account')} className="text-xs text-stone-400 hover:text-stone-600 underline">
+          Account
+        </button>
         <button onClick={handleLogout} className="text-xs text-stone-400 hover:text-stone-600 underline">
           Log out
         </button>
