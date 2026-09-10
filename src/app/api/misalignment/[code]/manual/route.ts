@@ -39,7 +39,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ code: 
   }
 
   try {
-    await saveManualDraft(team.id, component, cycleNumber, text)
+    await saveManualDraft(team.id, component, cycleNumber, memberId, text)
   } catch (e) {
     if (e instanceof MisalignmentNotFoundError) {
       return NextResponse.json({ error: e.message }, { status: 404 })

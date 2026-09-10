@@ -34,7 +34,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ code: s
   }
 
   try {
-    await createSynthesisDraft(team.id, component, cycleNumber)
+    await createSynthesisDraft(team.id, component, cycleNumber, memberId)
   } catch (e) {
     if (e instanceof MisalignmentConflictError) {
       return NextResponse.json({ error: e.message }, { status: 409 })

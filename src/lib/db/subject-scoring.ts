@@ -1,5 +1,6 @@
 import { query } from '@/lib/db'
 import { getTeamSubjectResponses } from '@/lib/team-members'
+import { logEngagementLevelComputed } from '@/lib/component-flow-events'
 import {
   SubjectResponses,
   TeamEngagementLevel,
@@ -21,6 +22,11 @@ export async function refreshTeamEngagementLevel(teamId: string): Promise<TeamEn
   const subjectResponses = await getTeamSubjectResponses(teamId)
   const level = computeTeamSubjectLevel(subjectResponses)
   await storeTeamEngagementLevel(teamId, level)
+  await logEngagementLevelComputed(teamId, level.level, {
+    positionSpread: level.positionSpread,
+    voiceDenominator: level.voiceDenominator,
+    voiceBelowV4: level.voiceBelowV4,
+  })
   return level
 }
 

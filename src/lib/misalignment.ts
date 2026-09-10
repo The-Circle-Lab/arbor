@@ -1,6 +1,14 @@
 import { query, queryOne, withTransaction } from './db'
 import { ChatComponent } from './chat-components'
 import { generateMisalignmentSynthesis } from './ai'
+import {
+  logSubmissionStepSummary,
+  logMemberSkipped,
+  logResolutionRejected,
+  logRegenerationCapHit,
+  logClauseAuthored,
+  logComponentResolved,
+} from './component-flow-events'
 
 // Single owning module for the HIGH-engagement-level 3-stage misalignment
 // resolution flow (misalignment_submissions / misalignment_resolutions /
@@ -165,19 +173,44 @@ export async function recordMisalignmentAction(
          SET status = 'submitted', content = $5, updated_at = NOW()`,
       [teamId, component, cycleNumber, memberId, trimmed]
     )
-    return
+  } else {
+    await query(
+      `INSERT INTO misalignment_submissions (team_id, component, cycle_number, member_id, status, content)
+       VALUES ($1, $2, $3, $4, 'skipped', NULL)
+       ON CONFLICT (team_id, component, cycle_number, member_id) DO UPDATE
+         SET status = 'skipped', content = NULL, updated_at = NOW()`,
+      [teamId, component, cycleNumber, memberId]
+    )
+
+    const team = await queryOne<{ stage: number }>('SELECT stage FROM teams WHERE id = $1', [teamId])
+    await logMemberSkipped(teamId, component, cycleNumber, memberId, {
+      gate: 'misalignment_submission',
+      teamStage: team?.stage ?? 0,
+    })
   }
 
-  await query(
-    `INSERT INTO misalignment_submissions (team_id, component, cycle_number, member_id, status, content)
-     VALUES ($1, $2, $3, $4, 'skipped', NULL)
-     ON CONFLICT (team_id, component, cycle_number, member_id) DO UPDATE
-       SET status = 'skipped', content = NULL, updated_at = NOW()`,
-    [teamId, component, cycleNumber, memberId]
-  )
+  // The caller (POST /api/misalignment/[code]) already refuses this action
+  // once actedCount >= teamSize, so a transition to "everyone's acted" can
+  // only be observed here once, right after the member who completed the
+  // roster is recorded above.
+  const [teamSize, submissions] = await Promise.all([
+    getTeamSize(teamId),
+    query<{ status: string }>(
+      'SELECT status FROM misalignment_submissions WHERE team_id = $1 AND component = $2 AND cycle_number = $3',
+      [teamId, component, cycleNumber]
+    ),
+  ])
+  if (submissions.length >= teamSize) {
+    const skippedCount = submissions.filter(s => s.status === 'skipped').length
+    await logSubmissionStepSummary(teamId, component, cycleNumber, {
+      submittedCount: submissions.length - skippedCount,
+      skippedCount,
+      teamSize,
+    })
+  }
 }
 
-export async function createSynthesisDraft(teamId: string, component: ChatComponent, cycleNumber: number): Promise<void> {
+export async function createSynthesisDraft(teamId: string, component: ChatComponent, cycleNumber: number, memberId: string): Promise<void> {
   const existing = await getResolutionRow(teamId, component, cycleNumber)
   if (existing) throw new MisalignmentConflictError('A resolution already exists for this component')
 
@@ -204,6 +237,7 @@ export async function createSynthesisDraft(teamId: string, component: ChatCompon
      ON CONFLICT (team_id, component, cycle_number) DO NOTHING`,
     [teamId, component, cycleNumber, clause]
   )
+  await logClauseAuthored(teamId, component, memberId, 'synthesized', cycleNumber)
 }
 
 export async function castMisalignmentVote(
@@ -252,12 +286,20 @@ export async function castMisalignmentVote(
     )
     if (!updated) throw new MisalignmentNotFoundError('No draft to vote on')
 
+    await logResolutionRejected(teamId, component, cycleNumber, memberId, {
+      rejectCount: updated.reject_count,
+      round: resolution.round + 1,
+    })
+
     if (updated.manual_mode) {
       // Two rejections force manual mode — the last draft becomes the
       // manual-edit starting point. Old-round votes are simply orphaned by
       // the round bump; that *is* "reopen approval for everyone" here,
       // since this table is round-scoped (no delete needed, unlike
-      // clearAgreementApprovals).
+      // clearAgreementApprovals). reject_count is capped at 2 by the
+      // manual-mode guard above (a manual-mode draft can't be rejected
+      // again), so this only ever fires once, exactly when the cap is hit.
+      await logRegenerationCapHit(teamId, component, cycleNumber, { rejectCount: updated.reject_count })
       return
     }
 
@@ -296,7 +338,7 @@ export async function castMisalignmentVote(
   }
 }
 
-export async function saveManualDraft(teamId: string, component: ChatComponent, cycleNumber: number, text: string): Promise<void> {
+export async function saveManualDraft(teamId: string, component: ChatComponent, cycleNumber: number, memberId: string, text: string): Promise<void> {
   const trimmed = text.trim()
   if (!trimmed) throw new MisalignmentInvalidActionError('Draft text is required')
 
@@ -307,6 +349,8 @@ export async function saveManualDraft(teamId: string, component: ChatComponent, 
     [teamId, component, cycleNumber, trimmed]
   )
   if (updated.length === 0) throw new MisalignmentNotFoundError('No manual-mode draft to update')
+
+  await logClauseAuthored(teamId, component, memberId, 'manual', cycleNumber)
 }
 
 export async function finalizeMisalignmentResolution(
@@ -361,4 +405,7 @@ export async function finalizeMisalignmentResolution(
 
     await tx.query('UPDATE misalignment_resolutions SET resolved_at = NOW() WHERE team_id=$1 AND component=$2 AND cycle_number=$3', [teamId, component, cycleNumber])
   })
+
+  await logClauseAuthored(teamId, component, finalizingMemberId, 'finalized', cycleNumber)
+  await logComponentResolved(teamId, component, cycleNumber, { recordedBy: finalizingMemberId })
 }

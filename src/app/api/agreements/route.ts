@@ -4,6 +4,7 @@ import { generateAgreementDraft, MemberReflection } from '@/lib/ai'
 import { ChatComponent } from '@/lib/chat-components'
 import { requireOwnedMember, requireTeamMemberByTeamId, isProjectManager } from '@/lib/auth/team-access'
 import { clearAgreementApprovals, listAgreementApprovals } from '@/lib/agreement-approvals'
+import { wasComponentFlagged, logClauseAuthored } from '@/lib/component-flow-events'
 
 // POST: save resolution note and trigger AI draft generation
 export async function POST(req: Request) {
@@ -57,6 +58,13 @@ export async function POST(req: Request) {
     [teamId, component, resolutionNote ?? null, draftText, memberId]
   )
 
+  // A resolution note only ever accompanies the flagged-component path (see
+  // the isProjectManager check above) — the no-note auto-draft path is for
+  // never-discussed components this audit trail isn't meant to track.
+  if (resolutionNote) {
+    await logClauseAuthored(teamId, component, memberId, 'drafted', 0)
+  }
+
   // Clear existing approvals since draft changed
   await clearAgreementApprovals(teamId, component)
 
@@ -81,6 +89,10 @@ export async function PATCH(req: Request) {
      WHERE team_id = $3 AND component = $4`,
     [finalText, memberId, teamId, component]
   )
+
+  if (await wasComponentFlagged(teamId, component)) {
+    await logClauseAuthored(teamId, component, memberId, 'edited')
+  }
 
   // Clear approvals when text is edited
   await clearAgreementApprovals(teamId, component)
