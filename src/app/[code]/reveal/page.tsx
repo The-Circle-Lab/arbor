@@ -207,24 +207,41 @@ export default function RevealPage() {
           </p>
         </div>
 
-        {/* Component tabs */}
-        <div className="flex gap-2 flex-wrap mb-6">
-          {CHAT_COMPONENTS.map(comp => (
-            <button
-              key={comp}
-              onClick={() => setActiveComponent(comp)}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${
-                activeComponent === comp
-                  ? 'bg-green-700 text-white'
-                  : flagged.includes(comp)
-                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                  : 'bg-white text-stone-600 border border-stone-200 hover:bg-stone-50'
-              }`}
-            >
-              {flagged.includes(comp) && '⚠ '}{COMPONENT_LABELS[comp]}
-            </button>
-          ))}
-        </div>
+        {/* Component tabs — MEDIUM walks through components one at a time
+            with no free tab navigation, same treatment as HIGH's agree page,
+            until the walkthrough is done (only the project manager advances
+            it, via handleComponentAdvance below). */}
+        {engagementLevel === 'medium' && flagged.length > 0 && !walkthroughDone ? (
+          <div className="mb-6">
+            <span className="text-xs text-stone-400 font-medium uppercase tracking-wide">
+              {`Step ${CHAT_COMPONENTS.indexOf(activeComponent) + 1} of ${CHAT_COMPONENTS.length}`}
+            </span>
+            <div className="w-full bg-stone-200 rounded-full h-1.5 mt-1">
+              <div
+                className="bg-green-600 h-1.5 rounded-full transition-all"
+                style={{ width: `${((CHAT_COMPONENTS.indexOf(activeComponent) + 1) / CHAT_COMPONENTS.length) * 100}%` }}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="flex gap-2 flex-wrap mb-6">
+            {CHAT_COMPONENTS.map(comp => (
+              <button
+                key={comp}
+                onClick={() => setActiveComponent(comp)}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium transition ${
+                  activeComponent === comp
+                    ? 'bg-green-700 text-white'
+                    : flagged.includes(comp)
+                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                    : 'bg-white text-stone-600 border border-stone-200 hover:bg-stone-50'
+                }`}
+              >
+                {flagged.includes(comp) && '⚠ '}{COMPONENT_LABELS[comp]}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Active component panel */}
         <div className="bg-white rounded-2xl shadow-sm border border-stone-100 p-6 mb-4">
@@ -299,18 +316,26 @@ export default function RevealPage() {
           )}
 
           {/* MEDIUM only: step through every component one at a time before the
-              real discussion timer appears below. */}
+              real discussion timer appears below. Only the project manager
+              drives this — everyone else just waits, same as the discussion
+              timer start below and in DiscussionTimerStartModal. */}
           {aiResult && engagementLevel === 'medium' && flagged.length > 0 && !walkthroughDone && (
-            <button
-              onClick={handleComponentAdvance}
-              className={`w-full rounded-xl py-3 mt-4 font-semibold transition ${
-                flagged.includes(activeComponent)
-                  ? 'bg-amber-600 text-white hover:bg-amber-700'
-                  : 'bg-green-700 text-white hover:bg-green-800'
-              }`}
-            >
-              {flagged.includes(activeComponent) ? 'All of us stated our positions' : 'Continue'}
-            </button>
+            isProjectManager ? (
+              <button
+                onClick={handleComponentAdvance}
+                className={`w-full rounded-xl py-3 mt-4 font-semibold transition ${
+                  flagged.includes(activeComponent)
+                    ? 'bg-amber-600 text-white hover:bg-amber-700'
+                    : 'bg-green-700 text-white hover:bg-green-800'
+                }`}
+              >
+                {flagged.includes(activeComponent) ? 'All of us stated our positions' : 'Continue'}
+              </button>
+            ) : (
+              <p className="text-sm text-stone-400 mt-4 text-center">
+                Waiting on your project manager to continue…
+              </p>
+            )
           )}
         </div>
 
