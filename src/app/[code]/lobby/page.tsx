@@ -146,7 +146,7 @@ export default function LobbyPage() {
         {/* Project context — creator only */}
         {isCreator ? (
           <div className="bg-white rounded-2xl border border-stone-100 shadow-sm p-5 mb-5">
-            <p className="text-xs text-stone-400 uppercase tracking-wide font-medium mb-1">Project details</p>
+            <p className="text-xs text-stone-400 uppercase tracking-wide font-medium mb-1">Project details (optional)</p>
             <p className="text-xs text-stone-400 mb-3">As team creator, you input the project details. Your teammates will see what you enter once saved.</p>
             <div className="flex flex-col gap-3">
               <input
