@@ -24,6 +24,9 @@ export function UserBar() {
       </span>
       <div className="flex items-center gap-3">
         <CourseSwitcher />
+        <button onClick={() => router.push('/account')} className="text-xs text-stone-400 hover:text-stone-600 underline">
+          Account
+        </button>
         <button onClick={handleLogout} className="text-xs text-stone-400 hover:text-stone-600 underline">
           Log out
         </button>
