@@ -203,7 +203,7 @@ export function MisalignmentFlow({ component, memberId, isProjectManager, cycleN
     const answers = data.anonymizedAnswers ?? []
     return (
       <div className="mb-4">
-        <p className="text-xs text-stone-400 uppercase tracking-wide font-medium mb-2">Anonymized answers</p>
+        <p className="text-xs text-stone-400 uppercase tracking-wide font-medium mb-2">Team&apos;s answers</p>
         <div className="flex flex-col gap-2 mb-3">
           {answers.length === 0 ? (
             <p className="text-sm text-stone-400 italic">Everyone skipped this one.</p>

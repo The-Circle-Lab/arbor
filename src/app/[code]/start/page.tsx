@@ -90,27 +90,20 @@ export default function StartPage() {
           <PlantVisual state={plantState} plantType={plantType} size={160} />
         </div>
 
-        {/* Join code */}
-        <div className="bg-white rounded-2xl border border-stone-100 shadow-sm p-5 mb-5">
-          <p className="text-xs text-stone-400 uppercase tracking-wide font-medium mb-2">Team code: share this</p>
-          <div className="flex items-center gap-3">
-            <span className="text-3xl font-mono font-bold tracking-widest text-green-700 flex-1">
-              {code.toUpperCase()}
-            </span>
-            <button
-              onClick={copyCode}
-              className="text-sm px-3 py-1.5 border border-stone-200 rounded-lg text-stone-600 hover:bg-stone-50 transition"
-            >
-              {copied ? 'Copied!' : 'Copy'}
-            </button>
-          </div>
-        </div>
-
         {/* Members */}
         <div className="bg-white rounded-2xl border border-stone-100 shadow-sm p-5 mb-5">
-          <p className="text-xs text-stone-400 uppercase tracking-wide font-medium mb-3">
-            Team ({members.length})
-          </p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs text-stone-400 uppercase tracking-wide font-medium">
+              Team ({members.length})
+            </p>
+            <button
+              onClick={copyCode}
+              className="flex items-center gap-1.5 text-xs text-stone-400 hover:text-stone-600 transition"
+            >
+              <span className="font-mono font-semibold tracking-wider text-stone-500">{code.toUpperCase()}</span>
+              <span>{copied ? 'Copied!' : 'Copy'}</span>
+            </button>
+          </div>
           <div className="flex flex-col gap-2">
             {members.map(m => (
               <div key={m.id} className="flex items-center gap-3">
@@ -137,7 +130,7 @@ export default function StartPage() {
             View team agreement
           </button>
           <button
-            onClick={() => router.push(`/${code}/report`)}
+            onClick={() => router.push(`/${code}/plant-history`)}
             className="w-full bg-white border border-stone-200 text-stone-700 rounded-xl py-3.5 text-sm font-semibold hover:bg-stone-50 transition"
           >
             View plant health history

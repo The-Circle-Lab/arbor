@@ -311,9 +311,14 @@ Rewrite the agreement as 1-2 sentences in first-person plural (starting with "We
 
 export async function generateMisalignmentSynthesis(
   component: ChatComponent,
+  originalResponses: Record<string, unknown>[],
   anonymizedSubmissions: string[],
   priorAttempt?: { draftText: string }
 ): Promise<string> {
+  const originalAnswersText = originalResponses.length > 0
+    ? originalResponses.map((r, i) => `Original answer ${i + 1}: ${JSON.stringify(r)}`).join('\n')
+    : 'No individual reflections were recorded for this component.'
+
   const submissionsText = anonymizedSubmissions.length > 0
     ? anonymizedSubmissions.map((s, i) => `Proposal ${i + 1}: ${s}`).join('\n\n')
     : 'No proposals were submitted — team members either skipped this step or nothing came through.'
@@ -322,12 +327,18 @@ export async function generateMisalignmentSynthesis(
     ? `\nA previous draft was rejected by the team:\n"${priorAttempt.draftText}"\nWrite a materially different attempt that still draws on the proposals below — don't just reword the rejected draft.`
     : ''
 
-  const prompt = `A student team had a meaningful disagreement on one component of their group agreement (${COMPONENT_LABELS[component]}) using CHAT (Cultural-Historical Activity Theory). Instead of discussing it live, each member privately proposed what the group should do about it. Their proposals (anonymous, unordered) are below.
+  const prompt = `A student team had a meaningful disagreement on one component of their group agreement (${COMPONENT_LABELS[component]}) using CHAT (Cultural-Historical Activity Theory).
+
+Before the disagreement was flagged, each member had privately answered reflection questions about this component. Their original answers (anonymous, unordered) are below:
+
+${originalAnswersText}
+
+Once the disagreement was flagged, each member privately proposed what the group should do about it. Their proposals (anonymous, unordered) are below:
 
 ${submissionsText}
 ${priorSection}
 
-Synthesize these into a single 1-3 sentence proposed group agreement clause, in first-person plural (starting with "We..."), that draws on the range of proposals above as fairly as possible. Do not favor one proposal outright if they conflict — find real common ground or an explicit compromise. Plain language, no jargon. Be specific to what was actually proposed — do not invent commitments nobody suggested.
+Synthesize these into a single 1-3 sentence proposed group agreement clause, in first-person plural (starting with "We..."), that draws on the range of proposals above as fairly as possible. Do not favor one proposal outright if they conflict — find real common ground or an explicit compromise. Also carry forward any specific points where the original answers already show agreement, even if a proposal didn't repeat them — don't let something the team actually agreed on get dropped just because the proposals focused on the disagreement. Plain language, no jargon. Be specific to what was actually written — do not invent commitments nobody suggested.
 
 ${NO_MEMBER_ATTRIBUTION_RULE}`
 

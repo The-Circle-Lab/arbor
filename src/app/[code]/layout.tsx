@@ -51,7 +51,7 @@ export default function CodeLayout({ children }: { children: ReactNode }) {
         if (pathname === hubPath) return
 
         if (mode === 'waiting' || mode === 'done') {
-          const allowed = [hubPath, `/${code}/start`, `/${code}/charter`, `/${code}/report`]
+          const allowed = [hubPath, `/${code}/start`, `/${code}/charter`, `/${code}/report`, `/${code}/plant-history`]
           const target = `/${code}/start`
           if (!allowed.includes(pathname) && pathname !== target) router.replace(target)
           return
@@ -59,7 +59,7 @@ export default function CodeLayout({ children }: { children: ReactNode }) {
 
         if (mode === 'active' && activeCycle === 1) {
           const allowed = [
-            hubPath, `/${code}/charter`, `/${code}/report`,
+            hubPath, `/${code}/charter`, `/${code}/report`, `/${code}/plant-history`,
             `/${code}/plant-intro`, `/${code}/checkin/1`, `/${code}/plant/1`, `/${code}/checkin-agree/1`,
           ]
           const target = `/${code}/plant-intro`
@@ -69,7 +69,7 @@ export default function CodeLayout({ children }: { children: ReactNode }) {
 
         if (mode === 'active' && activeCycle === 2) {
           const allowed = [
-            hubPath, `/${code}/charter`, `/${code}/report`,
+            hubPath, `/${code}/charter`, `/${code}/report`, `/${code}/plant-history`,
             `/${code}/checkin-intro`, `/${code}/checkin/2`, `/${code}/plant/2`, `/${code}/checkin-agree/2`,
           ]
           const target = `/${code}/checkin-intro`

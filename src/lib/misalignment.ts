@@ -70,6 +70,22 @@ async function getAnonymizedSubmissions(teamId: string, component: ChatComponent
   return rows.map(r => r.content)
 }
 
+// The team's original reflect-wizard answers for this component — not
+// cycle-scoped, unlike submissions/resolutions, since these were recorded
+// once up front. Fed into the synthesis prompt alongside the per-member
+// misalignment proposals so points the team already agreed on there don't
+// get dropped just because a later proposal didn't repeat them.
+async function getOriginalResponses(teamId: string, component: ChatComponent): Promise<Record<string, unknown>[]> {
+  const rows = await query<{ response_data: Record<string, unknown> }>(
+    `SELECT ir.response_data
+     FROM individual_reflections ir
+     JOIN members m ON m.id = ir.member_id
+     WHERE m.team_id = $1 AND ir.component = $2`,
+    [teamId, component]
+  )
+  return rows.map(r => r.response_data)
+}
+
 async function getResolutionRow(teamId: string, component: ChatComponent, cycleNumber: number): Promise<ResolutionRow | null> {
   return queryOne<ResolutionRow>(
     `SELECT id, round, reject_count, manual_mode, draft_text, resolved_at
@@ -180,7 +196,8 @@ export async function createSynthesisDraft(teamId: string, component: ChatCompon
     return
   }
 
-  const clause = await generateMisalignmentSynthesis(component, anonymizedSubmissions)
+  const originalResponses = await getOriginalResponses(teamId, component)
+  const clause = await generateMisalignmentSynthesis(component, originalResponses, anonymizedSubmissions)
   await query(
     `INSERT INTO misalignment_resolutions (team_id, component, cycle_number, round, reject_count, manual_mode, draft_text)
      VALUES ($1, $2, $3, 1, 0, false, $4)
@@ -245,8 +262,10 @@ export async function castMisalignmentVote(
     }
 
     const anonymizedSubmissions = await getAnonymizedSubmissions(teamId, component, cycleNumber)
+    const originalResponses = await getOriginalResponses(teamId, component)
     const clause = await generateMisalignmentSynthesis(
       component,
+      originalResponses,
       anonymizedSubmissions,
       resolution.draft_text ? { draftText: resolution.draft_text } : undefined
     )

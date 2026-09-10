@@ -3,24 +3,13 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useSession, getMembership } from '@/lib/session'
-import { COMPONENT_LABELS, ChatComponent } from '@/lib/chat-components'
-import { PlantVisual, type PlantType, type PlantState } from '@/components/PlantVisual'
+import { ChatComponent } from '@/lib/chat-components'
+import { type PlantType } from '@/components/PlantVisual'
+import { PlantHealthTimeline, type PlantHealthEntry } from '@/components/PlantHealthTimeline'
 
 interface AgreementEntry {
   component: ChatComponent
   finalText: string | null
-}
-
-interface PlantHealthEntry {
-  occurredAt: string
-  level: number
-  state: PlantState
-  delta: number
-  source: 'deadline_missed' | 'task_recovered' | 'checkin'
-  taskId: string | null
-  cycleNumber: number | null
-  flaggedComponents: ChatComponent[] | null
-  perComponent: Record<ChatComponent, string> | null
 }
 
 interface DecisionTimelineEntry {
@@ -46,19 +35,6 @@ interface ReportData {
   decisionTimeline: DecisionTimelineEntry[]
   aiReport: AiReport | null
   aiReportStale: boolean
-}
-
-const STATE_LABELS: Record<PlantState, string> = {
-  thriving: 'Thriving',
-  doing_okay: 'Doing okay',
-  wilting: 'Wilting',
-  dead: 'Dead',
-}
-
-const SOURCE_LABELS: Record<PlantHealthEntry['source'], string> = {
-  deadline_missed: 'Deadline missed',
-  task_recovered: 'Task completed',
-  checkin: 'Check-in',
 }
 
 const TIMELINE_STYLES: Record<DecisionTimelineEntry['type'], string> = {
@@ -204,46 +180,7 @@ export default function FinalReportPage() {
         {/* Plant health timeline */}
         <div className="bg-white rounded-2xl shadow-sm border border-stone-100 p-6 mb-8">
           <h2 className="text-lg font-bold text-stone-800 mb-4">Plant health over time</h2>
-          {data.plantHealthHistory.length === 0 ? (
-            <p className="text-sm text-stone-400 italic">Nothing changed the plant&apos;s health this project.</p>
-          ) : (
-            <div className="space-y-3">
-              {data.plantHealthHistory.map((entry, i) => {
-                const flagged = entry.flaggedComponents ?? []
-                const perComponent = entry.perComponent
-                return (
-                <div key={i} className="flex gap-4 items-start bg-stone-50 rounded-xl p-4">
-                  <PlantVisual state={entry.state} plantType={plantType} size={56} hideLabel />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="text-xs font-semibold text-stone-500 uppercase tracking-wide">{SOURCE_LABELS[entry.source]}</span>
-                      <span className="text-xs text-stone-400">{formatDate(entry.occurredAt)}</span>
-                      <span className="text-xs font-medium text-stone-600">→ {STATE_LABELS[entry.state]}</span>
-                    </div>
-                    {entry.source === 'checkin' && (
-                      <div className="text-sm text-stone-700">
-                        {flagged.length > 0 ? (
-                          <p>Flagged: {flagged.map(c => COMPONENT_LABELS[c]).join(', ')}</p>
-                        ) : (
-                          <p className="text-stone-400 italic">No components flagged.</p>
-                        )}
-                        {perComponent && flagged.length > 0 && (
-                          <div className="mt-1 space-y-0.5">
-                            {flagged.map(c => (
-                              <p key={c} className="text-xs text-stone-500">
-                                <span className="font-medium">{COMPONENT_LABELS[c]}:</span> {perComponent[c]}
-                              </p>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                )
-              })}
-            </div>
-          )}
+          <PlantHealthTimeline history={data.plantHealthHistory} plantType={plantType} />
         </div>
 
         {/* Team agreement timeline */}
