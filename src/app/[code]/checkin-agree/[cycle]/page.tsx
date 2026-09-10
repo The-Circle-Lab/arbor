@@ -6,6 +6,8 @@ import { useSession, getMembership } from '@/lib/session'
 import { COMPONENT_LABELS, COMPONENT_DESCRIPTIONS, ChatComponent } from '@/lib/chat-components'
 import { WaitingRoom } from '@/components/WaitingRoom'
 import { DiscussionTimer, DiscussionTimerState } from '@/components/DiscussionTimer'
+import { MisalignmentFlow } from '@/components/MisalignmentFlow'
+import { EngagementLevel, FacilitationOrderEntry } from '@/lib/subject-scoring'
 
 interface Agreement {
   component: string
@@ -28,9 +30,12 @@ export default function CheckinAgreePage() {
   const [teamId, setTeamId] = useState('')
   const [teamSize, setTeamSize] = useState(2)
   const [projectManagerId, setProjectManagerId] = useState<string | null>(null)
+  const [engagementLevel, setEngagementLevel] = useState<EngagementLevel>('low')
+  const [facilitationOrder, setFacilitationOrder] = useState<FacilitationOrderEntry[]>([])
   const [members, setMembers] = useState<{ id: string; display_name: string }[]>([])
   const [flagged, setFlagged] = useState<ChatComponent[]>([])
   const [comments, setComments] = useState<Record<string, string>>({})
+  const [splitReasons, setSplitReasons] = useState<Record<string, string>>({})
   const [agreements, setAgreements] = useState<Record<string, Agreement>>({})
   const [approvals, setApprovals] = useState<Approval[]>([])
   const [active, setActive] = useState<ChatComponent | null>(null)
@@ -50,6 +55,8 @@ export default function CheckinAgreePage() {
     setTeamSize(teamData.status.teamSize)
     setMembers(teamData.members)
     setProjectManagerId(teamData.project_manager_id ?? null)
+    setEngagementLevel(teamData.engagement_level ?? 'low')
+    setFacilitationOrder(teamData.facilitation_order ?? [])
 
     const plantRes = await fetch(`/api/plant/${code.toUpperCase()}/${cycleNum}`)
     if (!plantRes.ok) return
@@ -57,6 +64,7 @@ export default function CheckinAgreePage() {
     const flaggedList: ChatComponent[] = plant.flagged_components ?? []
     setFlagged(flaggedList)
     setComments(plant.per_component ?? {})
+    setSplitReasons(plant.split_reasons ?? {})
     if (!activeRef.current && flaggedList.length > 0) {
       activeRef.current = flaggedList[0]
       setActive(flaggedList[0])
@@ -219,7 +227,7 @@ export default function CheckinAgreePage() {
 
   return (
     <main className="min-h-screen bg-stone-50">
-      {!allResolved && (
+      {!allResolved && engagementLevel !== 'high' && (
         <DiscussionTimer
           loading={!timerLoaded}
           timer={timer}
@@ -270,6 +278,18 @@ export default function CheckinAgreePage() {
               </div>
             )}
 
+            {engagementLevel === 'medium' && active && (
+              <div className="mt-3 text-xs text-amber-900 border-t border-amber-200 pt-3">
+                <p>{splitReasons[active]
+                  ? `Your group's check-in showed movement on this, because ${splitReasons[active]}. Before anyone responds to what someone else said, every member needs to state their own position first, in this order — no replying, no jumping in early:`
+                  : `Your group's check-in showed movement on this. Before anyone responds to what someone else said, every member needs to state their own position first, in this order — no replying, no jumping in early:`}</p>
+                <ol className="list-decimal list-inside my-2">
+                  {facilitationOrder.map(entry => <li key={entry.memberId}>{entry.displayName}</li>)}
+                </ol>
+                <p>Once everyone above has gone, you can start responding to each other. This step is needed because the group&apos;s check-in showed drift, and hearing everyone&apos;s opinion again is important for making it visible.</p>
+              </div>
+            )}
+
             {/* Current agreement */}
             <div className="mb-4">
               <label className="block text-sm font-medium text-stone-700 mb-1">Current agreement</label>
@@ -278,8 +298,23 @@ export default function CheckinAgreePage() {
               </p>
             </div>
 
+            {/* HIGH-engagement teams get the async 3-stage MisalignmentFlow instead of the resolutionNote UI. */}
+            {!fullyApproved(active) && engagementLevel === 'high' && (
+              <div className="mb-4">
+                <MisalignmentFlow
+                  key={`${active}-${cycleNum}`}
+                  teamId={teamId}
+                  component={active}
+                  memberId={membership.member_id}
+                  isProjectManager={isProjectManager}
+                  teamSize={teamSize}
+                  cycleNumber={cycleNum}
+                />
+              </div>
+            )}
+
             {/* Revise the agreement, or approve as-is if it still holds — project manager only */}
-            {!fullyApproved(active) && (
+            {!fullyApproved(active) && engagementLevel !== 'high' && (
               isProjectManager ? (
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-stone-700 mb-1">

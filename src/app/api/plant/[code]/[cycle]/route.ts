@@ -28,8 +28,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
       flagged_components: string[]
       ai_nudge_text: string | string[]
       per_component: Record<string, string>
+      split_reasons: Record<string, string> | null
     }>(
-      'SELECT computed_state, flagged_components, ai_nudge_text, per_component FROM plant_states WHERE team_id = $1 AND cycle_number = $2',
+      'SELECT computed_state, flagged_components, ai_nudge_text, per_component, split_reasons FROM plant_states WHERE team_id = $1 AND cycle_number = $2',
       [teamId, cycleNum]
     )
     if (cached) return NextResponse.json(cached)
@@ -78,11 +79,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
     let finalState = plantResult.state
     await withTransaction(async tx => {
       const inserted = await tx.query<{ team_id: string }>(
-        `INSERT INTO plant_states (team_id, cycle_number, computed_state, flagged_components, ai_nudge_text, per_component)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO plant_states (team_id, cycle_number, computed_state, flagged_components, ai_nudge_text, per_component, split_reasons)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (team_id, cycle_number) DO NOTHING
          RETURNING team_id`,
-        [teamId, cycleNum, plantResult.state, allFlagged, null, JSON.stringify(comparison.perComponent)]
+        [teamId, cycleNum, plantResult.state, allFlagged, null, JSON.stringify(comparison.perComponent), JSON.stringify(comparison.splitReasons)]
       )
       if (inserted.length === 0) return
 
@@ -114,6 +115,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
       computed_state: finalState,
       flagged_components: allFlagged,
       per_component: comparison.perComponent,
+      split_reasons: comparison.splitReasons,
     })
   } catch (e) {
     console.error('GET /api/plant/[code]/[cycle] error:', e)

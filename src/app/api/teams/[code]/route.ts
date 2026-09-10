@@ -5,6 +5,8 @@ import { getCurrentPlantState } from '@/lib/plant-health'
 import { requireTeamMember } from '@/lib/auth/team-access'
 import { getTeamMembers } from '@/lib/team-members'
 import { getCheckinAccess } from '@/lib/checkin-schedule'
+import { EngagementLevel, computeFacilitationOrder } from '@/lib/subject-scoring'
+import { getTeamMemberVoiceScores } from '@/lib/db/subject-scoring'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
@@ -12,8 +14,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
   const membership = await requireTeamMember(code)
   if (!membership) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const team = await queryOne<{ id: string; name: string; join_code: string; project_title: string | null; deadline: string | null; assignment_brief: string | null; plant_type: string | null; plant_votes: Record<string, string> | null; project_manager_id: string | null; project_manager_votes: Record<string, string> | null }>(
-    'SELECT id, name, join_code, project_title, deadline, assignment_brief, plant_type, plant_votes, project_manager_id, project_manager_votes FROM teams WHERE join_code = $1',
+  const team = await queryOne<{ id: string; name: string; join_code: string; project_title: string | null; deadline: string | null; assignment_brief: string | null; plant_type: string | null; plant_votes: Record<string, string> | null; project_manager_id: string | null; project_manager_votes: Record<string, string> | null; engagement_level: EngagementLevel }>(
+    'SELECT id, name, join_code, project_title, deadline, assignment_brief, plant_type, plant_votes, project_manager_id, project_manager_votes, engagement_level FROM teams WHERE join_code = $1',
     [code.toUpperCase()]
   )
   if (!team) return NextResponse.json({ error: 'Team not found' }, { status: 404 })
@@ -26,5 +28,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
   ])
   const checkinAccess = await getCheckinAccess(team.id, status)
 
-  return NextResponse.json({ ...team, members, status, plant_state, checkinAccess })
-}
+  // MEDIUM is the only level that uses a facilitation order today — computed
+  // here (not cached) since it's cheap and only ever read by the two agree
+  // pages, which already poll this endpoint on their own 4s cadence.
+  const facilitation_order = team.engagement_level === 'medium'
+    ? computeFacilitationOrder(await getTeamMemberVoiceScores(team.id))
+    : null
+
+  return NextResponse.json({ ...team, members, status, plant_state, facilitation_order, checkinAccess })}
