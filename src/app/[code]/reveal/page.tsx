@@ -106,15 +106,22 @@ export default function RevealPage() {
   const flagged = aiResult?.flagged_components ?? []
   const isProjectManager = !!projectManagerId && projectManagerId === membership?.member_id
 
+  // HIGH-engagement teams skip the reveal comparison entirely — the AI
+  // analysis still has to run here (this is what inserts the reveal_ai row
+  // the /agree page and DB stage transition depend on), but once it's ready
+  // we forward straight into /agree instead of showing the side-by-side
+  // answers and per-component summary.
+  useEffect(() => {
+    if (engagementLevel === 'high' && aiResult) router.replace(`/${code}/agree`)
+  }, [engagementLevel, aiResult, code, router])
+
   // Once there's something to discuss, wait for the discussion timer to
   // start (the project manager's own start click navigates immediately —
   // this poll is what carries everyone else across once it does) and move
   // the whole team into the Agree page together.
   useEffect(() => {
-    // HIGH replaces the live-discussion timer with an asynchronous per-member
-    // flow — there's no "PM started the timer" moment to synchronize on, so
-    // this poll (and the PM's own immediate navigation) has nothing to wait
-    // for. Everyone still navigates via the "Continue →" button below.
+    // HIGH skips this entirely — it's redirected to /agree as soon as
+    // aiResult is ready, before there's ever a discussion timer to wait on.
     if (!aiResult || flagged.length === 0 || engagementLevel === 'high') return
     let cancelled = false
 
@@ -177,6 +184,31 @@ export default function RevealPage() {
         <div className="text-center">
           <p className="text-stone-700 font-medium mb-1">Waiting for everyone to finish reflecting</p>
           <p className="text-stone-400 text-sm">You'll see the comparison once all responses are in.</p>
+        </div>
+      </main>
+    )
+  }
+
+  if (engagementLevel === 'high') {
+    return (
+      <main className="min-h-screen bg-stone-50 flex items-center justify-center p-6">
+        <div className="text-center max-w-sm">
+          {aiTimedOut && !aiResult ? (
+            <>
+              <p className="text-stone-700 font-medium mb-1">Analysis is taking longer than expected</p>
+              <button
+                onClick={() => pollForAI(code as string)}
+                className="mt-3 px-4 py-2 bg-amber-700 text-white rounded-lg text-sm font-medium hover:bg-amber-800 transition"
+              >
+                Retry
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-stone-700 font-medium mb-1">Analyzing your team&apos;s alignment</p>
+              <p className="text-stone-400 text-sm">You&apos;ll move straight to your group agreements.</p>
+            </>
+          )}
         </div>
       </main>
     )
@@ -309,18 +341,6 @@ export default function RevealPage() {
           <div className="bg-white rounded-2xl shadow-sm border border-stone-100 p-6">
             <h3 className="font-semibold text-stone-800 mb-2">Before you continue</h3>
             <p className="text-sm text-stone-600 mb-4">No major gaps detected. When you're ready, move on to write your group agreements.</p>
-            <button
-              onClick={() => router.push(`/${code}/agree`)}
-              className="w-full bg-green-700 text-white rounded-xl py-3 font-medium hover:bg-green-800 transition"
-            >
-              Continue →
-            </button>
-          </div>
-        )}
-
-        {aiResult && flagged.length > 0 && engagementLevel === 'high' && (
-          <div className="bg-white rounded-2xl shadow-sm border border-stone-100 p-6">
-            <h3 className="font-semibold text-stone-800 mb-2">Before you continue</h3>
             <button
               onClick={() => router.push(`/${code}/agree`)}
               className="w-full bg-green-700 text-white rounded-xl py-3 font-medium hover:bg-green-800 transition"
