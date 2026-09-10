@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useSession, getMembership } from '@/lib/session'
+import { AllMembersJoinedModal } from '@/components/AllMembersJoinedModal'
 
 interface Member {
   id: string
@@ -27,6 +28,7 @@ export default function ChooseProjectManagerPage() {
   const [votes, setVotes] = useState<Record<string, string>>({})
   const [myVote, setMyVote] = useState<string | null>(null)
   const [voting, setVoting] = useState(false)
+  const [awaitingJoinConfirmation, setAwaitingJoinConfirmation] = useState(true)
 
   useEffect(() => {
     if (loading) return
@@ -77,6 +79,12 @@ export default function ChooseProjectManagerPage() {
 
   return (
     <main className="min-h-screen bg-stone-50 flex items-center justify-center p-6">
+      {awaitingJoinConfirmation && (
+        <AllMembersJoinedModal
+          onConfirm={() => setAwaitingJoinConfirmation(false)}
+          onDeny={() => router.push(`/${code}/lobby`)}
+        />
+      )}
       <div className="w-full max-w-lg">
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-stone-800">Choose your Project Manager</h1>
