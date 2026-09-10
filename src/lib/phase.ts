@@ -1,27 +1,13 @@
 import { query, queryOne } from './db'
 import { CHAT_COMPONENTS } from './chat-components'
-import { countTaskApprovals } from './task-approvals'
 
-export type Phase =
-  | 'REFLECTING'
-  | 'REVEAL'
-  | 'AGREEING'
-  | 'TASKS'
-  | 'CHECKIN_1'
-  | 'PLANT_1'
-  | 'CHECKIN_2'
-  | 'PLANT_2'
-  | 'DONE'
-
-interface TeamStatus {
-  phase: Phase
+export interface TeamStatus {
+  stage: number
   hasProjectManager: boolean
   teamSize: number
   reflectionsSubmitted: number
   allReflected: boolean
   allAgreed: boolean
-  hasTasks: boolean
-  tasksApproved: boolean
   checkin1Submitted: number
   allCheckin1Done: boolean
   checkin2Submitted: number
@@ -38,8 +24,8 @@ export async function getTeamStatus(teamId: string): Promise<TeamStatus> {
     [teamId]
   )
 
-  const teamRow = await queryOne<{ project_manager_id: string | null }>(
-    'SELECT project_manager_id FROM teams WHERE id = $1',
+  const teamRow = await queryOne<{ project_manager_id: string | null; stage: number }>(
+    'SELECT project_manager_id, stage FROM teams WHERE id = $1',
     [teamId]
   )
   const hasProjectManager = !!teamRow?.project_manager_id
@@ -50,14 +36,14 @@ export async function getTeamStatus(teamId: string): Promise<TeamStatus> {
      JOIN members m ON m.id = ir.member_id
      WHERE m.team_id = $1
      GROUP BY m.team_id
-     HAVING COUNT(DISTINCT ir.component) = 6`,
-    [teamId]
+     HAVING COUNT(DISTINCT ir.component) = $2`,
+    [teamId, CHAT_COMPONENTS.length]
   ).catch(() => [])
 
   const reflectionsSubmitted = reflRows[0]?.count ?? 0
   const allReflected = reflectionsSubmitted >= team_size
 
-  // All 6 agreements fully approved by all members
+  // All agreements fully approved by all members
   const agreedRows = await query<{ component: string; approvals: number }>(
     `SELECT a.component, COUNT(aa.member_id)::int AS approvals
      FROM agreements a
@@ -67,7 +53,7 @@ export async function getTeamStatus(teamId: string): Promise<TeamStatus> {
     [teamId]
   )
   const allAgreed =
-    agreedRows.length === 6 &&
+    agreedRows.length === CHAT_COMPONENTS.length &&
     agreedRows.every(r => r.approvals >= team_size)
 
   // Per-component approval counts — used to tell when re-flagged components
@@ -75,16 +61,7 @@ export async function getTeamStatus(teamId: string): Promise<TeamStatus> {
   const approvalByComponent = new Map<string, number>()
   for (const r of agreedRows) approvalByComponent.set(r.component, r.approvals)
 
-  // Task list: one shared list per team, gated by team-wide (not per-task) approval.
-  const [{ task_count }] = await query<{ task_count: number }>(
-    'SELECT COUNT(*)::int AS task_count FROM tasks WHERE team_id = $1',
-    [teamId]
-  )
-  const taskApprovalCount = await countTaskApprovals(teamId)
-  const hasTasks = task_count > 0
-  const tasksApproved = hasTasks && taskApprovalCount >= team_size
-
-  // Check-in counts (members who submitted all 6 components for a cycle)
+  // Check-in counts (members who submitted all components for a cycle)
   const checkin1Count = await countCheckinSubmissions(teamId, 1)
   const checkin2Count = await countCheckinSubmissions(teamId, 2)
 
@@ -111,25 +88,13 @@ export async function getTeamStatus(teamId: string): Promise<TeamStatus> {
   const plant2Resolved = !hasFlagsAfterCycle2 ||
     flagged2.every(c => (approvalByComponent.get(c) ?? 0) >= team_size)
 
-  // Derive phase
-  let phase: Phase = 'REFLECTING'
-  if (allReflected) phase = 'REVEAL'
-  if (allAgreed) phase = 'TASKS'
-  if (allAgreed && tasksApproved) phase = 'CHECKIN_1'
-  if (checkin1Count >= team_size) phase = 'PLANT_1'
-  if (checkin1Count >= team_size && plant1Resolved) phase = 'CHECKIN_2'
-  if (checkin2Count >= team_size) phase = 'PLANT_2'
-  if (checkin2Count >= team_size && plant2Resolved) phase = 'DONE'
-
   return {
-    phase,
+    stage: teamRow?.stage ?? 0,
     hasProjectManager,
     teamSize: team_size,
     reflectionsSubmitted,
     allReflected,
     allAgreed,
-    hasTasks,
-    tasksApproved,
     checkin1Submitted: checkin1Count,
     allCheckin1Done: checkin1Count >= team_size,
     checkin2Submitted: checkin2Count,

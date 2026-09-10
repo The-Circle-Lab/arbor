@@ -1,6 +1,5 @@
 export const CHAT_COMPONENTS = [
   'object',
-  'subject',
   'division_of_labor',
   'rules',
   'tools',
@@ -9,9 +8,12 @@ export const CHAT_COMPONENTS = [
 
 export type ChatComponent = (typeof CHAT_COMPONENTS)[number]
 
+export function isChatComponent(value: string): value is ChatComponent {
+  return CHAT_COMPONENTS.some(c => c === value)
+}
+
 export const COMPONENT_LABELS: Record<ChatComponent, string> = {
   object: 'Objective',
-  subject: 'Your Role & Goals',
   division_of_labor: 'Contribution Structure',
   rules: 'How We Work Together',
   tools: 'Tools & Platforms',
@@ -20,14 +22,72 @@ export const COMPONENT_LABELS: Record<ChatComponent, string> = {
 
 export const COMPONENT_DESCRIPTIONS: Record<ChatComponent, string> = {
   object: 'What does success look like — and does your team agree?',
-  subject: 'What each person wants to get out of this, and the role they want to play',
   division_of_labor: 'Who owns what, and what fair contribution looks like to each person',
   rules: 'How the team communicates, meets, decides, and holds quality',
   tools: 'The platforms and tools everyone will actually use',
   community: 'Who has a say in this project, and who doesn\'t',
 }
 
-export const REFLECTION_QUESTIONS: Record<ChatComponent, { id: string; question: string; type: 'text' | 'multiselect' | 'choice' | 'priority-rank'; options?: string[]; withOpenText?: boolean }[]> = {
+// Subject is no longer a shared CHAT component (it doesn't appear in reveal,
+// agreements, or check-ins), but its reflection questions are still asked in
+// the reflect wizard, 2nd — right after Objective — and stored on
+// `members.subject_responses` instead of `individual_reflections`. Kept as
+// standalone exports (not part of the Record<ChatComponent, ...> maps above)
+// since `ChatComponent` no longer includes 'subject'.
+export const SUBJECT_LABEL = 'Your Role & Goals'
+export const SUBJECT_DESCRIPTION = 'What each person wants to get out of this, and the role they want to play'
+
+export interface ReflectionQuestion {
+  id: string
+  question: string
+  type: 'text' | 'multiselect' | 'choice' | 'priority-rank'
+  options?: string[]
+  withOpenText?: boolean
+  shuffleOptions?: boolean
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(v => typeof v === 'string')
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  return Object.values(value).every(v => typeof v === 'string')
+}
+
+export function formatReflectionAnswer(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (isStringArray(value)) return value.join(', ')
+  if (isStringRecord(value)) {
+    return Object.entries(value).map(([opt, level]) => `${opt}: ${level}`).join(', ')
+  }
+  return ''
+}
+
+export interface ReflectionAnswerDisplay {
+  answer: string
+  otherText: string | null
+  openText: string | null
+}
+
+// A reflection question's answer, plus its "Other" free-text and open-ended
+// follow-up if the member filled either in — both stored as separate keys
+// (`${question.id}_other` / `_open`) alongside the main answer.
+export function getReflectionAnswerDisplay(
+  question: ReflectionQuestion,
+  responseData: Record<string, unknown> | undefined
+): ReflectionAnswerDisplay | null {
+  if (!responseData) return null
+  const otherRaw = responseData[`${question.id}_other`]
+  const openRaw = responseData[`${question.id}_open`]
+  return {
+    answer: formatReflectionAnswer(responseData[question.id]),
+    otherText: typeof otherRaw === 'string' && otherRaw.trim() ? otherRaw : null,
+    openText: typeof openRaw === 'string' && openRaw.trim() ? openRaw : null,
+  }
+}
+
+export const REFLECTION_QUESTIONS: Record<ChatComponent, ReflectionQuestion[]> = {
   object: [
     {
       id: 'success_definition',
@@ -39,19 +99,6 @@ export const REFLECTION_QUESTIONS: Record<ChatComponent, { id: string; question:
       question: 'Rank each of these by how much they matter to you in this project:',
       type: 'priority-rank',
       options: ['Quality of the final output', 'Meeting the deadline', 'Learning something new', 'A fair and smooth team experience'],
-    },
-  ],
-  subject: [
-    {
-      id: 'personal_goal',
-      question: 'What do you want to get out of this project, beyond the deliverable?',
-      type: 'text',
-    },
-    {
-      id: 'preferred_role',
-      question: 'What kind of contributor do you tend to be in group work? Select all that apply.',
-      type: 'multiselect',
-      options: ['I take the lead and coordinate', 'I focus on executing my part well', 'I move between tasks as needed', 'I keep the group accountable', 'Hybrid — depends on the task', 'Other'],
     },
   ],
   division_of_labor: [
@@ -126,12 +173,34 @@ export const REFLECTION_QUESTIONS: Record<ChatComponent, { id: string; question:
   ],
 }
 
+// The reflect wizard's 2nd step (right after Objective) — see the
+// SUBJECT_LABEL/SUBJECT_DESCRIPTION comment above for why this is separate
+// from REFLECTION_QUESTIONS.
+export const SUBJECT_QUESTIONS: ReflectionQuestion[] = [
+  {
+    id: 'personal_goal',
+    question: 'What do you want to get out of this project, beyond the deliverable?',
+    type: 'text',
+  },
+  {
+    id: 'position',
+    question: 'On past team projects, which of these did you usually end up doing? Select all that apply.',
+    type: 'multiselect',
+    options: ['Proposed a direction and got others on board', 'Kept the group organized and on schedule', 'Took a defined piece and ran it independently', 'Moved between tasks depending on what was needed', 'Took what was assigned and delivered it', 'Filled whatever was left once others had chosen', 'Other'],
+    shuffleOptions: true,
+  },
+  {
+    id: 'voice',
+    question: 'Think of a time you disagreed with the direction your group was already moving toward. What did you usually do?',
+    type: 'choice',
+    options: ['Said so in the group conversation', 'Raised it with one person separately', 'Waited to see whether someone else would raise it', 'Went along with it and adjusted my own work around it', 'Other'],
+    shuffleOptions: true,
+  },
+]
+
 export const CHECKIN_QUESTIONS: Record<ChatComponent, { id: string; question: string; hasRating: boolean }[]> = {
   object: [
     { id: 'shared_outcome', question: 'Is the group still working toward the outcome you agreed on?', hasRating: true },
-  ],
-  subject: [
-    { id: 'role_satisfaction', question: 'Are you getting the kind of role and contribution you wanted?', hasRating: true },
   ],
   division_of_labor: [
     { id: 'workload_fair', question: 'Does the current workload feel fair, given what was agreed?', hasRating: true },

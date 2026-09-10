@@ -3,8 +3,9 @@ export const maxDuration = 60
 import { NextResponse } from 'next/server'
 import { query, queryOne } from '@/lib/db'
 import { generateRevealComparison, MemberReflection } from '@/lib/ai'
-import { ChatComponent } from '@/lib/chat-components'
+import { CHAT_COMPONENTS, ChatComponent } from '@/lib/chat-components'
 import { requireTeamMember } from '@/lib/auth/team-access'
+import { refreshTeamEngagementLevel } from '@/lib/db/subject-scoring'
 
 export async function POST(_req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
@@ -14,11 +15,16 @@ export async function POST(_req: Request, { params }: { params: Promise<{ code: 
   const teamId = membership.teamId
 
   // Return cached result if exists
-  const cached = await queryOne<{ per_component: Record<ChatComponent, string>; flagged_components: string[] }>(
-    'SELECT per_component, flagged_components FROM reveal_ai WHERE team_id = $1',
+  const cached = await queryOne<{ per_component: Record<ChatComponent, string>; flagged_components: string[]; split_reasons: Partial<Record<ChatComponent, string>> | null }>(
+    'SELECT per_component, flagged_components, split_reasons FROM reveal_ai WHERE team_id = $1',
     [teamId]
   )
   if (cached) return NextResponse.json(cached)
+
+  const [{ team_size }] = await query<{ team_size: number }>(
+    'SELECT COUNT(*)::int AS team_size FROM members WHERE team_id = $1',
+    [teamId]
+  )
 
   // Build member reflections
   const reflections = await query<{
@@ -45,19 +51,31 @@ export async function POST(_req: Request, { params }: { params: Promise<{ code: 
     memberMap.get(row.member_id)!.responses[row.component as ChatComponent] = row.response_data
   }
 
+  // Require every member to have submitted all components before generating —
+  // otherwise this would persist a reveal_ai row from a partial team, which
+  // permanently blocks the reflections poller's own (complete) generation.
+  const submitted = Array.from(memberMap.values())
+    .filter(member => Object.keys(member.responses).length >= CHAT_COMPONENTS.length).length
+  if (submitted < team_size) {
+    return NextResponse.json({ error: 'Team has not finished reflections' }, { status: 403 })
+  }
+
+  const engagementLevel = await refreshTeamEngagementLevel(teamId)
+
   const members = Array.from(memberMap.values())
-  const result = await generateRevealComparison(members)
+  const result = await generateRevealComparison(members, undefined, engagementLevel.level)
 
   await query(
-    `INSERT INTO reveal_ai (team_id, per_component, flagged_components)
-     VALUES ($1, $2, $3)
+    `INSERT INTO reveal_ai (team_id, per_component, flagged_components, split_reasons)
+     VALUES ($1, $2, $3, $4)
      ON CONFLICT (team_id) DO NOTHING`,
-    [teamId, JSON.stringify(result.perComponent), result.flaggedComponents]
+    [teamId, JSON.stringify(result.perComponent), result.flaggedComponents, JSON.stringify(result.splitReasons)]
   )
 
   return NextResponse.json({
     per_component: result.perComponent,
     flagged_components: result.flaggedComponents,
+    split_reasons: result.splitReasons,
   })
 }
 
@@ -67,8 +85,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
   const membership = await requireTeamMember(code)
   if (!membership) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const cached = await queryOne<{ per_component: Record<ChatComponent, string>; flagged_components: string[] }>(
-    'SELECT per_component, flagged_components FROM reveal_ai WHERE team_id = $1',
+  const cached = await queryOne<{ per_component: Record<ChatComponent, string>; flagged_components: string[]; split_reasons: Partial<Record<ChatComponent, string>> | null }>(
+    'SELECT per_component, flagged_components, split_reasons FROM reveal_ai WHERE team_id = $1',
     [membership.teamId]
   )
   if (!cached) return NextResponse.json({ ready: false }, { status: 404 })

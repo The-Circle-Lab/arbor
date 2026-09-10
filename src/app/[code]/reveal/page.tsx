@@ -5,10 +5,11 @@ import { useParams, useRouter } from 'next/navigation'
 import { useSession, getMembership } from '@/lib/session'
 import { CHAT_COMPONENTS, COMPONENT_LABELS, COMPONENT_DESCRIPTIONS, ChatComponent } from '@/lib/chat-components'
 import { DiscussionTimerStartModal } from '@/components/DiscussionTimerStartModal'
+import { ReflectionAnswersByQuestion } from '@/components/ReflectionAnswersByQuestion'
+import { EngagementLevel, FacilitationOrderEntry } from '@/lib/subject-scoring'
 
 const NEGOTIATION_NUDGES: Record<ChatComponent, string> = {
   object:            'This difference is worth talking about: what does success actually mean to each of you, in practice?',
-  subject:           'This difference is worth talking about: what kind of role do you each picture yourself in, day to day?',
   division_of_labor: 'This difference is worth talking about: who owns what, and does that match what you\'re each expecting to carry?',
   rules:             'This difference is worth talking about: what does it actually feel like to work well together, and do you mean the same thing?',
   tools:             'This difference is worth talking about: can you land on a specific list of tools you\'ll both actually use?',
@@ -25,6 +26,7 @@ interface Reflection {
 interface RevealAI {
   per_component: Record<ChatComponent, string>
   flagged_components: string[]
+  split_reasons: Partial<Record<ChatComponent, string>> | null
 }
 
 export default function RevealPage() {
@@ -34,13 +36,20 @@ export default function RevealPage() {
   const { loading, user, memberships } = useSession()
   const membership = getMembership(memberships, code)
   const [reflections, setReflections] = useState<Reflection[]>([])
-  const [members, setMembers] = useState<string[]>([])
+  const [members, setMembers] = useState<{ id: string; display_name: string }[]>([])
   const [teamId, setTeamId] = useState('')
   const [aiResult, setAiResult] = useState<RevealAI | null>(null)
   const [loadingAI, setLoadingAI] = useState(false)
   const [activeComponent, setActiveComponent] = useState<ChatComponent>('object')
   const [waitingForTeam, setWaitingForTeam] = useState(true)
   const [projectManagerId, setProjectManagerId] = useState<string | null>(null)
+  const [engagementLevel, setEngagementLevel] = useState<EngagementLevel>('low')
+  const [facilitationOrder, setFacilitationOrder] = useState<FacilitationOrderEntry[]>([])
+  // MEDIUM only: true once the team has stepped through every CHAT component
+  // one at a time via the per-component Continue/"All of us stated our
+  // positions" button below — only then does the real discussion-timer start
+  // modal appear.
+  const [walkthroughDone, setWalkthroughDone] = useState(false)
 
   useEffect(() => {
     if (loading) return
@@ -57,13 +66,13 @@ export default function RevealPage() {
       setWaitingForTeam(false)
       setReflections(refData.reflections)
 
-      const unique = Array.from(new Set<string>(refData.reflections.map((r: Reflection) => r.display_name)))
-      setMembers(unique)
-
       const teamRes = await fetch(`/api/teams/${code.toUpperCase()}`)
       const teamData = await teamRes.json()
       setTeamId(teamData.id)
+      setMembers(teamData.members ?? [])
       setProjectManagerId(teamData.project_manager_id ?? null)
+      setEngagementLevel(teamData.engagement_level ?? 'low')
+      setFacilitationOrder(teamData.facilitation_order ?? [])
 
       // Trigger AI generation (idempotent — returns cached if already done)
       fetch(`/api/reveal-ai/${code.toUpperCase()}`, { method: 'POST' }).catch(() => {})
@@ -96,12 +105,23 @@ export default function RevealPage() {
   const flagged = aiResult?.flagged_components ?? []
   const isProjectManager = !!projectManagerId && projectManagerId === membership?.member_id
 
+  // HIGH-engagement teams skip the reveal comparison entirely — the AI
+  // analysis still has to run here (this is what inserts the reveal_ai row
+  // the /agree page and DB stage transition depend on), but once it's ready
+  // we forward straight into /agree instead of showing the side-by-side
+  // answers and per-component summary.
+  useEffect(() => {
+    if (engagementLevel === 'high' && aiResult) router.replace(`/${code}/agree`)
+  }, [engagementLevel, aiResult, code, router])
+
   // Once there's something to discuss, wait for the discussion timer to
   // start (the project manager's own start click navigates immediately —
   // this poll is what carries everyone else across once it does) and move
   // the whole team into the Agree page together.
   useEffect(() => {
-    if (!aiResult || flagged.length === 0) return
+    // HIGH skips this entirely — it's redirected to /agree as soon as
+    // aiResult is ready, before there's ever a discussion timer to wait on.
+    if (!aiResult || flagged.length === 0 || engagementLevel === 'high') return
     let cancelled = false
 
     async function poll() {
@@ -114,7 +134,19 @@ export default function RevealPage() {
     poll()
     const interval = setInterval(poll, 3000)
     return () => { cancelled = true; clearInterval(interval) }
-  }, [aiResult, flagged.length, code, router])
+  }, [aiResult, flagged.length, engagementLevel, code, router])
+
+  // MEDIUM only: steps the walkthrough to the next CHAT component, or marks
+  // it done once the last component's button is clicked (which reveals the
+  // real discussion-timer start modal below).
+  function handleComponentAdvance() {
+    const idx = CHAT_COMPONENTS.indexOf(activeComponent)
+    if (idx < CHAT_COMPONENTS.length - 1) {
+      setActiveComponent(CHAT_COMPONENTS[idx + 1])
+    } else {
+      setWalkthroughDone(true)
+    }
+  }
 
   async function handleStartTimer() {
     await fetch(`/api/teams/${code.toUpperCase()}/discussion-timer/start`, {
@@ -129,28 +161,37 @@ export default function RevealPage() {
     return reflections.filter(r => r.component === component)
   }
 
-  function formatResponse(data: Record<string, unknown>): string {
-    return Object.entries(data)
-      .filter(([k]) => !k.endsWith('_other') && !k.endsWith('_open'))
-      .map(([, v]) => {
-        if (Array.isArray(v)) return v.join(', ')
-        if (v && typeof v === 'object') {
-          return Object.entries(v as Record<string, string>)
-            .map(([opt, level]) => `${opt}: ${level}`)
-            .join(', ')
-        }
-        return v as string
-      })
-      .filter(Boolean)
-      .join('\n')
-  }
-
   if (waitingForTeam) {
     return (
       <main className="min-h-screen bg-stone-50 flex items-center justify-center p-6">
         <div className="text-center">
           <p className="text-stone-700 font-medium mb-1">Waiting for everyone to finish reflecting</p>
           <p className="text-stone-400 text-sm">You'll see the comparison once all responses are in.</p>
+        </div>
+      </main>
+    )
+  }
+
+  if (engagementLevel === 'high') {
+    return (
+      <main className="min-h-screen bg-stone-50 flex items-center justify-center p-6">
+        <div className="text-center max-w-sm">
+          {aiTimedOut && !aiResult ? (
+            <>
+              <p className="text-stone-700 font-medium mb-1">Analysis is taking longer than expected</p>
+              <button
+                onClick={() => pollForAI(code as string)}
+                className="mt-3 px-4 py-2 bg-amber-700 text-white rounded-lg text-sm font-medium hover:bg-amber-800 transition"
+              >
+                Retry
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-stone-700 font-medium mb-1">Analyzing your team&apos;s alignment</p>
+              <p className="text-stone-400 text-sm">You&apos;ll move straight to your group agreements.</p>
+            </>
+          )}
         </div>
       </main>
     )
@@ -199,22 +240,17 @@ export default function RevealPage() {
             )}
           </div>
 
-          {/* Member answers side by side */}
-          <div
-            className="grid gap-4 mb-5"
-            style={{ gridTemplateColumns: `repeat(${Math.max(members.length, 1)}, minmax(0, 1fr))` }}
-          >
-            {members.map(name => {
-              const ref = getResponsesForComponent(activeComponent).find(r => r.display_name === name)
-              return (
-                <div key={name} className="bg-stone-50 rounded-xl p-4">
-                  <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-2">{name}</p>
-                  <p className="text-sm text-stone-700 whitespace-pre-line">
-                    {ref ? formatResponse(ref.response_data) : <span className="text-stone-300 italic">No response</span>}
-                  </p>
-                </div>
-              )
-            })}
+          {/* What each person said, grouped by question */}
+          <div className="mb-5">
+            <p className="text-xs text-stone-400 uppercase tracking-wide font-medium mb-2">What each person said</p>
+            <ReflectionAnswersByQuestion
+              component={activeComponent}
+              members={members}
+              // Reached only for low/medium — HIGH is redirected to /agree
+              // before this render, so anonymizing here would never apply.
+              anonymize={false}
+              getResponseData={memberId => getResponsesForComponent(activeComponent).find(r => r.member_id === memberId)?.response_data}
+            />
           </div>
 
           {/* AI comment */}
@@ -239,13 +275,42 @@ export default function RevealPage() {
               <p className="font-semibold mb-1 text-xs uppercase tracking-wide opacity-60">
                 {flagged.includes(activeComponent) ? 'Alignment gap' : 'Arbour summary'}
               </p>
-              <p>{aiResult.per_component[activeComponent]}</p>
-              {flagged.includes(activeComponent) && (
-                <p className="mt-3 text-xs italic opacity-75 border-t border-amber-200 pt-3">
-                  {NEGOTIATION_NUDGES[activeComponent]}
-                </p>
+              {flagged.includes(activeComponent) && engagementLevel === 'medium' ? (
+                <>
+                  <p>{aiResult.split_reasons?.[activeComponent]
+                    ? `Your group's answers were split on this, because ${aiResult.split_reasons[activeComponent]}. Before anyone responds to what someone else said, every member needs to state their own position first, in this order — no replying, no jumping in early:`
+                    : `Your group's answers were split on this. Before anyone responds to what someone else said, every member needs to state their own position first, in this order — no replying, no jumping in early:`}</p>
+                  <ol className="list-decimal list-inside my-2">
+                    {facilitationOrder.map(entry => <li key={entry.memberId}>{entry.displayName}</li>)}
+                  </ol>
+                  <p>Once everyone above has gone, you can start responding to each other. This step is needed because the group was split, and hearing everyone&apos;s opinion is important for making the split visible.</p>
+                </>
+              ) : (
+                <>
+                  <p>{aiResult.per_component[activeComponent]}</p>
+                  {flagged.includes(activeComponent) && (
+                    <p className="mt-3 text-xs italic opacity-75 border-t border-amber-200 pt-3">
+                      {NEGOTIATION_NUDGES[activeComponent]}
+                    </p>
+                  )}
+                </>
               )}
             </div>
+          )}
+
+          {/* MEDIUM only: step through every component one at a time before the
+              real discussion timer appears below. */}
+          {aiResult && engagementLevel === 'medium' && flagged.length > 0 && !walkthroughDone && (
+            <button
+              onClick={handleComponentAdvance}
+              className={`w-full rounded-xl py-3 mt-4 font-semibold transition ${
+                flagged.includes(activeComponent)
+                  ? 'bg-amber-600 text-white hover:bg-amber-700'
+                  : 'bg-green-700 text-white hover:bg-green-800'
+              }`}
+            >
+              {flagged.includes(activeComponent) ? 'All of us stated our positions' : 'Continue'}
+            </button>
           )}
         </div>
 
@@ -263,7 +328,11 @@ export default function RevealPage() {
           </div>
         )}
 
-        {aiResult && flagged.length > 0 && (
+        {aiResult && flagged.length > 0 && engagementLevel === 'medium' && walkthroughDone && (
+          <DiscussionTimerStartModal isProjectManager={isProjectManager} onStart={handleStartTimer} />
+        )}
+
+        {aiResult && flagged.length > 0 && engagementLevel === 'low' && (
           <DiscussionTimerStartModal isProjectManager={isProjectManager} onStart={handleStartTimer} />
         )}
       </div>

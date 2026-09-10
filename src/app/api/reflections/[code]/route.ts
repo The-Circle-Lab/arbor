@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import { query, queryOne } from '@/lib/db'
 import { generateRevealComparison, MemberReflection } from '@/lib/ai'
-import { ChatComponent } from '@/lib/chat-components'
+import { CHAT_COMPONENTS, ChatComponent } from '@/lib/chat-components'
 import { requireTeamMember } from '@/lib/auth/team-access'
+import { refreshTeamEngagementLevel } from '@/lib/db/subject-scoring'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
@@ -21,7 +22,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
     [teamId]
   )
 
-  // Count members who submitted all 6 components
+  // Count members who submitted all CHAT components
   const submittedRows = await query<{ member_id: string; count: number }>(
     `SELECT ir.member_id, COUNT(DISTINCT ir.component)::int AS count
      FROM individual_reflections ir
@@ -30,7 +31,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
      GROUP BY ir.member_id`,
     [teamId]
   )
-  const submitted = submittedRows.filter(r => r.count >= 6).length
+  const submitted = submittedRows.filter(r => r.count >= CHAT_COMPONENTS.length).length
 
   if (submitted < team_size) {
     return NextResponse.json({ ready: false, submitted, teamSize: team_size }, { status: 403 })
@@ -68,11 +69,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
       team?.assignment_brief ? `Brief: ${team.assignment_brief}` : '',
     ].filter(Boolean).join('\n') || undefined
 
-    generateRevealComparison(Array.from(memberMap.values()), projectContext)
+    refreshTeamEngagementLevel(teamId)
+      .then(engagementLevel => generateRevealComparison(Array.from(memberMap.values()), projectContext, engagementLevel.level))
       .then(result => query(
-        `INSERT INTO reveal_ai (team_id, per_component, flagged_components)
-         VALUES ($1, $2, $3) ON CONFLICT (team_id) DO NOTHING`,
-        [teamId, JSON.stringify(result.perComponent), result.flaggedComponents]
+        `INSERT INTO reveal_ai (team_id, per_component, flagged_components, split_reasons)
+         VALUES ($1, $2, $3, $4) ON CONFLICT (team_id) DO NOTHING`,
+        [teamId, JSON.stringify(result.perComponent), result.flaggedComponents, JSON.stringify(result.splitReasons)]
       ))
       .catch(e => console.error('reveal-ai generation error:', e))
   }

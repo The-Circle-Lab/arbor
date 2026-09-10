@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useSession, getMembership } from '@/lib/session'
-import { PlantVisual, PlantState, PlantType } from '@/components/PlantVisual'
+import { PlantVisual, PlantState, PlantType, STATE_COLORS } from '@/components/PlantVisual'
 import { WaitingRoom } from '@/components/WaitingRoom'
 import { COMPONENT_LABELS, ChatComponent } from '@/lib/chat-components'
 
@@ -69,15 +69,8 @@ export default function PlantPage() {
 
   const flagged = plantData.flagged_components
 
-  const STATE_BG: Record<PlantState, string> = {
-    thriving: 'bg-green-50',
-    doing_okay: 'bg-amber-50',
-    wilting: 'bg-orange-50',
-    dead: 'bg-red-50',
-  }
-
   return (
-    <main className={`min-h-screen ${STATE_BG[plantData.computed_state]} p-6 flex flex-col items-center`}>
+    <main className={`min-h-screen ${STATE_COLORS[plantData.computed_state].bg} p-6 flex flex-col items-center`}>
       <div className="w-full max-w-xl">
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs text-stone-400 uppercase tracking-wide font-medium">{`Cycle ${cycleNum} · Team health`}</p>

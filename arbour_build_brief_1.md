@@ -30,7 +30,7 @@ The tool must support team sizes of 2-4 in its data model and logic from the sta
 ## Data model (rough shape, adjust as needed)
 - **Team**: id, name, created_at
 - **Member**: id, team_id, display_name (no real auth needed — fastest path: enter name + team code to join)
-- **Agreement**: team_id, component (enum: object, subject, division_of_labor, rules, tools, community), agreed_text
+- **Agreement**: team_id, component (enum: object, division_of_labor, rules, tools, community), agreed_text
 - **IndividualReflection**: member_id, component, response (text or structured, depending on component — see questions below)
 - **CheckIn**: member_id, cycle_number (1 or 2), component, rating (aligned / slightly_off / very_off), optional text
 - **PlantState**: team_id, cycle_number, computed_state (thriving/healthy/struggling/wilting), flagged_components (array), ai_nudge_text
@@ -44,13 +44,13 @@ Note: all tables involving "the other member" comparisons (reveal, check-in dive
 Fastest possible: one person creates a team (gets a code), the other joins with that code + their name. No real auth needed.
 
 ### 2. Individual reflection (Part 1)
-Each person answers, privately, mapped to all six CHAT components:
+Each person answers, privately, mapped to all five CHAT components (plus Subject, collected as personal profile info only):
 
 **Object**
 - What does a successful outcome look like to you, specifically?
 - If you had to pick one thing this project must achieve for you to call it a success, what is it?
 
-**Subject**
+**Subject** (collected as personal profile info during reflection only — not part of reveal, agreements, or check-in comparisons)
 - What do you want to get out of doing this project — beyond the grade/deliverable?
 - What kind of contributor are you in group work — and is that the role you want this time?
 
@@ -84,7 +84,7 @@ Each cycle, both members independently answer the check-in questions:
 
 **Object** — Do you still feel like the group is working toward the same outcome you agreed on? (rating + optional text)
 
-**Subject** — Are you getting the kind of role/contribution you wanted out of this? (rating + optional text)
+(Subject is not part of check-ins — it's collected once, as personal profile info, during reflection.)
 
 **Division of Labor**
 - Does the current workload feel fair, given what was agreed? (rating + optional text)

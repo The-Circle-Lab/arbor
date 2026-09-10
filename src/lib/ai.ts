@@ -1,11 +1,17 @@
 import { CHAT_COMPONENTS, ChatComponent, COMPONENT_LABELS } from './chat-components'
 import { sendAiApiRequest } from './ai-api'
+import type { EngagementLevel } from './subject-scoring'
 
-interface ComponentAnalysisResponse {
+// Reveal's own flag/comment schema — the original 2-field shape, with no
+// split_reason. Kept separate from componentAnalysisSchema below (which
+// still carries split_reason for generateCheckinComparison) so reverting
+// reveal's prompt back to "the original prompt that flags the components"
+// doesn't touch check-in's already-working split-reason feature.
+interface FlagAnalysisResponse {
   components: Record<ChatComponent, { comment: string; flagged: boolean }>
 }
 
-const componentAnalysisSchema = {
+const flagAnalysisSchema = {
   type: 'object',
   properties: {
     components: {
@@ -24,6 +30,63 @@ const componentAnalysisSchema = {
     },
   },
   required: ['components'],
+  additionalProperties: false,
+}
+
+// Builds a schema requiring exactly one split-reason string per flagged
+// component — dynamic because the flagged set differs every team, same
+// pattern as buildTaskSuggestionsSchema/buildDeadlineSuggestionsSchema below.
+function buildSplitReasonSchema(components: ChatComponent[]) {
+  return {
+    type: 'object',
+    properties: {
+      split_reasons: {
+        type: 'object',
+        properties: Object.fromEntries(components.map(c => [c, { type: 'string' }])),
+        required: [...components],
+        additionalProperties: false,
+      },
+    },
+    required: ['split_reasons'],
+    additionalProperties: false,
+  }
+}
+
+// generateCheckinComparison's shared schema — still 3 fields (comment,
+// flagged, split_reason) generated together in one call, unlike reveal's now
+// two-call flow above. Left as-is since check-in's split-reason feature
+// already works this way and wasn't part of this change.
+interface ComponentAnalysisResponse {
+  components: Record<ChatComponent, { comment: string; flagged: boolean; split_reason: string }>
+}
+
+const componentAnalysisSchema = {
+  type: 'object',
+  properties: {
+    components: {
+      type: 'object',
+      properties: Object.fromEntries(CHAT_COMPONENTS.map(c => [c, {
+        type: 'object',
+        properties: {
+          comment: { type: 'string' },
+          flagged: { type: 'boolean' },
+          split_reason: { type: 'string' },
+        },
+        required: ['comment', 'flagged', 'split_reason'],
+        additionalProperties: false,
+      }])),
+      required: [...CHAT_COMPONENTS],
+      additionalProperties: false,
+    },
+  },
+  required: ['components'],
+  additionalProperties: false,
+}
+
+const misalignmentClauseSchema = {
+  type: 'object',
+  properties: { clause: { type: 'string' } },
+  required: ['clause'],
   additionalProperties: false,
 }
 
@@ -71,12 +134,55 @@ export interface MemberReflection {
 export interface RevealAIResult {
   perComponent: Record<ChatComponent, string>
   flaggedComponents: ChatComponent[]
+  // Only flagged components get an entry — nothing ever displays a split
+  // reason for a non-flagged one, and the second AI call below only asks for
+  // reasons on the components the first call actually flagged.
+  splitReasons: Partial<Record<ChatComponent, string>>
 }
 
-export async function generateRevealComparison(members: MemberReflection[], projectContext?: string): Promise<RevealAIResult> {
+// Shared by generateCheckinComparison — asks the model to analyze all five
+// CHAT components (comment, flagged, and a split-reason clause) in one call,
+// then splits that into a per-component comment map, the flagged subset, and
+// a split-reason map. generateRevealComparison below no longer uses this —
+// see the two-call flow it runs instead.
+function splitComponentAnalysis(components: ComponentAnalysisResponse['components']): {
+  perComponent: Record<ChatComponent, string>
+  flaggedComponents: ChatComponent[]
+  splitReasons: Record<ChatComponent, string>
+} {
+  return {
+    perComponent: {
+      object: components.object.comment,
+      division_of_labor: components.division_of_labor.comment,
+      rules: components.rules.comment,
+      tools: components.tools.comment,
+      community: components.community.comment,
+    },
+    flaggedComponents: CHAT_COMPONENTS.filter(c => components[c].flagged),
+    splitReasons: {
+      object: components.object.split_reason,
+      division_of_labor: components.division_of_labor.split_reason,
+      rules: components.rules.split_reason,
+      tools: components.tools.split_reason,
+      community: components.community.split_reason,
+    },
+  }
+}
+
+// Runs the original flag/comment prompt first (unchanged from before
+// split-reason existed), then — only for a MEDIUM-engagement team, and only
+// if anything got flagged — a second, separate prompt asking for a
+// split-reason clause for just those flagged components. LOW and HIGH teams
+// never display a split reason anywhere, so skipping that second call for
+// them isn't just an optimization, it avoids generating text nobody sees.
+export async function generateRevealComparison(
+  members: MemberReflection[],
+  projectContext?: string,
+  engagementLevel?: EngagementLevel
+): Promise<RevealAIResult> {
   const memberSummaries = members.map(m => {
-    const sections = Object.entries(m.responses).map(([comp, data]) =>
-      `[${COMPONENT_LABELS[comp as ChatComponent]}]\n${JSON.stringify(data, null, 2)}`
+    const sections = CHAT_COMPONENTS.map(comp =>
+      `[${COMPONENT_LABELS[comp]}]\n${JSON.stringify(m.responses[comp], null, 2)}`
     ).join('\n\n')
     return `=== ${m.displayName} ===\n${sections}`
   }).join('\n\n')
@@ -87,27 +193,70 @@ export async function generateRevealComparison(members: MemberReflection[], proj
 
   const prompt = `You are analyzing a student team's individual reflections using CHAT (Cultural-Historical Activity Theory).
 ${contextSection}
-The team has ${members.length} members. Their individual reflections across six CHAT components are below.
+The team has ${members.length} members. Their individual reflections across five CHAT components are below.
 
 ${memberSummaries}
 
-For each of the six CHAT components (object, subject, division_of_labor, rules, tools, community), do two things:
-1. Write a 2-3 sentence plain-language comment on where the team aligns or where a gap exists. Name the CHAT component explicitly. Do not tell the team what to do — only name the gap or alignment. No jargon beyond the component name itself. Write it about the team as a whole, following the attribution rule below.
+For each of the five CHAT components (object, division_of_labor, rules, tools, community), do two things:
+1. Write a 2-3 sentence plain-language comment that identifies specific points where the team's answers align, and specific points where there is a misalignment. Name the CHAT component explicitly. Do not tell the team what to do — only name the specific points of alignment or misalignment. No jargon beyond the component name itself. Write it about the team as a whole, following the attribution rule below.
 2. Decide if this component should be FLAGGED (true/false). Flag it if there is a meaningful gap or potential misalignment that the team should discuss before proceeding.
 
 ${NO_MEMBER_ATTRIBUTION_RULE}`
 
-  const message = await sendAiApiRequest<ComponentAnalysisResponse>('fast_model', 1500, prompt, componentAnalysisSchema)
+  const message = await sendAiApiRequest<FlagAnalysisResponse>('fast_model', 1500, prompt, flagAnalysisSchema)
 
-  const perComponent: Record<ChatComponent, string> = {} as Record<ChatComponent, string>
-  const flaggedComponents: ChatComponent[] = []
-
-  for (const [comp, v] of Object.entries(message.components)) {
-    perComponent[comp as ChatComponent] = v.comment
-    if (v.flagged) flaggedComponents.push(comp as ChatComponent)
+  const perComponent: Record<ChatComponent, string> = {
+    object: message.components.object.comment,
+    division_of_labor: message.components.division_of_labor.comment,
+    rules: message.components.rules.comment,
+    tools: message.components.tools.comment,
+    community: message.components.community.comment,
   }
+  const flaggedComponents = CHAT_COMPONENTS.filter(c => message.components[c].flagged)
 
-  return { perComponent, flaggedComponents }
+  const splitReasons = engagementLevel === 'medium'
+    ? await generateSplitReasons(flaggedComponents, members)
+    : {}
+
+  return { perComponent, flaggedComponents, splitReasons }
+}
+
+// Second call for generateRevealComparison above: asks only for a
+// split-reason clause, only for the components already known to be flagged.
+// A no-op (no AI call) when nothing's flagged.
+export async function generateSplitReasons(
+  flaggedComponents: ChatComponent[],
+  members: MemberReflection[]
+): Promise<Partial<Record<ChatComponent, string>>> {
+  if (flaggedComponents.length === 0) return {}
+
+  const memberSummaries = members.map(m => {
+    const sections = flaggedComponents.map(comp =>
+      `[${COMPONENT_LABELS[comp]}]\n${JSON.stringify(m.responses[comp], null, 2)}`
+    ).join('\n\n')
+    return `=== ${m.displayName} ===\n${sections}`
+  }).join('\n\n')
+
+  const componentList = flaggedComponents.map(c => COMPONENT_LABELS[c]).join(', ')
+
+  const prompt = `A student team's individual reflections were analyzed using CHAT (Cultural-Historical Activity Theory), and the following components were flagged as having a meaningful gap: ${componentList}.
+
+Their individual reflections for just these flagged components are below.
+
+${memberSummaries}
+
+For each flagged component, write a short causal clause — NOT a full sentence — that grammatically completes the phrase "...split on this, because ___" (e.g. "some of you are prioritizing polish while others are prioritizing meeting the deadline").
+
+${NO_MEMBER_ATTRIBUTION_RULE}`
+
+  const schema = buildSplitReasonSchema(flaggedComponents)
+  const message = await sendAiApiRequest<{ split_reasons: Record<string, string> }>('fast_model', 600, prompt, schema)
+
+  const result: Partial<Record<ChatComponent, string>> = {}
+  for (const c of flaggedComponents) {
+    result[c] = message.split_reasons[c]
+  }
+  return result
 }
 
 export async function generateAgreementDraft(
@@ -131,7 +280,7 @@ CHAT Component: ${COMPONENT_LABELS[component]}
 Individual reflections:
 ${responseText}${resolutionSection}
 
-Draft a 1-2 sentence group agreement in first-person plural (starting with "We...") that captures what this team has decided about ${COMPONENT_LABELS[component]}. Plain language, no jargon. Be specific to what they actually wrote — do not add things they didn't say.`
+Draft a 1-2 sentence group agreement in first-person plural (starting with "We...") that captures what this team has decided about ${COMPONENT_LABELS[component]}. Be specific about what the team agreed on and how they are going to move forward with their group work. Plain language, no jargon. Be specific to what they actually wrote — do not add things they didn't say.`
 
   const message = await sendAiApiRequest<{ agreement: string }>('default_model', 300, prompt, agreementSchema)
 
@@ -160,30 +309,73 @@ Rewrite the agreement as 1-2 sentences in first-person plural (starting with "We
   return message.agreement
 }
 
+export async function generateMisalignmentSynthesis(
+  component: ChatComponent,
+  originalResponses: Record<string, unknown>[],
+  anonymizedSubmissions: string[],
+  priorAttempt?: { draftText: string }
+): Promise<string> {
+  const originalAnswersText = originalResponses.length > 0
+    ? originalResponses.map((r, i) => `Original answer ${i + 1}: ${JSON.stringify(r)}`).join('\n')
+    : 'No individual reflections were recorded for this component.'
+
+  const submissionsText = anonymizedSubmissions.length > 0
+    ? anonymizedSubmissions.map((s, i) => `Proposal ${i + 1}: ${s}`).join('\n\n')
+    : 'No proposals were submitted — team members either skipped this step or nothing came through.'
+
+  const priorSection = priorAttempt
+    ? `\nA previous draft was rejected by the team:\n"${priorAttempt.draftText}"\nWrite a materially different attempt that still draws on the proposals below — don't just reword the rejected draft.`
+    : ''
+
+  const prompt = `A student team had a meaningful disagreement on one component of their group agreement (${COMPONENT_LABELS[component]}) using CHAT (Cultural-Historical Activity Theory).
+
+Before the disagreement was flagged, each member had privately answered reflection questions about this component. Their original answers (anonymous, unordered) are below:
+
+${originalAnswersText}
+
+Once the disagreement was flagged, each member privately proposed what the group should do about it. Their proposals (anonymous, unordered) are below:
+
+${submissionsText}
+${priorSection}
+
+Synthesize these into a single 1-3 sentence proposed group agreement clause, in first-person plural (starting with "We..."), that draws on the range of proposals above as fairly as possible. Do not favor one proposal outright if they conflict — find real common ground or an explicit compromise. Also carry forward any specific points where the original answers already show agreement, even if a proposal didn't repeat them — don't let something the team actually agreed on get dropped just because the proposals focused on the disagreement. Plain language, no jargon. Be specific to what was actually written — do not invent commitments nobody suggested.
+
+${NO_MEMBER_ATTRIBUTION_RULE}`
+
+  const message = await sendAiApiRequest<{ clause: string }>('default_model', 400, prompt, misalignmentClauseSchema)
+  return message.clause
+}
+
 export interface CheckinSummary {
   displayName: string
-  checkins: Record<ChatComponent, { rating?: string; notes?: Record<string, string> }>
+  checkins: Partial<Record<ChatComponent, { rating?: string; notes?: Record<string, string> }>>
 }
 
 export interface CheckinComparisonResult {
   perComponent: Record<ChatComponent, string>
   flaggedComponents: ChatComponent[]
+  splitReasons: Record<ChatComponent, string>
 }
 
 export async function generateCheckinComparison(
   members: CheckinSummary[],
-  agreements: Record<ChatComponent, string>,
+  agreements: Partial<Record<ChatComponent, string>>,
   cycleNumber: number,
 ): Promise<CheckinComparisonResult> {
-  const agreementText = Object.entries(agreements)
-    .map(([comp, text]) => `${COMPONENT_LABELS[comp as ChatComponent]}: ${text}`)
+  // Presence check, not truthiness — an agreement explicitly cleared to an
+  // empty string is still a row that exists and should still be listed,
+  // distinct from a component that was never agreed on at all.
+  const agreementText = CHAT_COMPONENTS
+    .filter(c => agreements[c] !== undefined)
+    .map(c => `${COMPONENT_LABELS[c]}: ${agreements[c]}`)
     .join('\n')
 
   const checkinText = members.map(m => {
-    const lines = Object.entries(m.checkins).map(([comp, data]) => {
-      const r = data.rating ?? 'no rating'
-      const notes = data.notes ? Object.entries(data.notes).map(([k, v]) => `  ${k}: ${v}`).join('\n') : ''
-      return `  ${COMPONENT_LABELS[comp as ChatComponent]}: ${r}${notes ? '\n' + notes : ''}`
+    const lines = CHAT_COMPONENTS.map(comp => {
+      const data = m.checkins[comp]
+      const r = data?.rating ?? 'no rating'
+      const notes = data?.notes ? Object.entries(data.notes).map(([k, v]) => `  ${k}: ${v}`).join('\n') : ''
+      return `  ${COMPONENT_LABELS[comp]}: ${r}${notes ? '\n' + notes : ''}`
     }).join('\n')
     return `=== ${m.displayName} ===\n${lines}`
   }).join('\n\n')
@@ -196,22 +388,16 @@ ${agreementText}
 Their check-in responses:
 ${checkinText}
 
-For each of the six CHAT components (object, subject, division_of_labor, rules, tools, community), do two things:
+For each of the five CHAT components (object, division_of_labor, rules, tools, community), do three things:
 1. Write a 2-3 sentence plain-language comment on whether the team is holding to what they agreed, or where tension has appeared since. Reference the original agreement vs. what the team now reports. Name the CHAT component. Do not tell the team what to do — only name the gap or the alignment. No jargon beyond the component name. Write it about the team as a whole, following the attribution rule below.
 2. Decide if this component should be FLAGGED (true/false). Flag it if there is a "very_off" rating, a divergence between members, or drift from the original agreement that the team should discuss.
+3. Write a short causal clause — NOT a full sentence — that grammatically completes the phrase "...shifted on this, because ___" (this is about what changed since the team's original agreement, not the original disagreement — e.g. "the workload picked up faster than expected for some of you while others had more time freed up"). Write this even for components you don't flag; it will only be shown when the component is flagged.
 
 ${NO_MEMBER_ATTRIBUTION_RULE}`
 
-  const message = await sendAiApiRequest<ComponentAnalysisResponse>('fast_model', 1500, prompt, componentAnalysisSchema)
+  const message = await sendAiApiRequest<ComponentAnalysisResponse>('fast_model', 1800, prompt, componentAnalysisSchema)
 
-  const perComponent: Record<ChatComponent, string> = {} as Record<ChatComponent, string>
-  const flaggedComponents: ChatComponent[] = []
-  for (const [comp, v] of Object.entries(message.components)) {
-    perComponent[comp as ChatComponent] = v.comment
-    if (v.flagged) flaggedComponents.push(comp as ChatComponent)
-  }
-
-  return { perComponent, flaggedComponents }
+  return splitComponentAnalysis(message.components)
 }
 
 export interface NudgeResult {
@@ -221,18 +407,23 @@ export interface NudgeResult {
 
 export async function generateCheckinNudge(
   members: CheckinSummary[],
-  agreements: Record<ChatComponent, string>,
+  agreements: Partial<Record<ChatComponent, string>>,
   cycleNumber: number
 ): Promise<NudgeResult> {
-  const agreementText = Object.entries(agreements)
-    .map(([comp, text]) => `${COMPONENT_LABELS[comp as ChatComponent]}: ${text}`)
+  // Presence check, not truthiness — an agreement explicitly cleared to an
+  // empty string is still a row that exists and should still be listed,
+  // distinct from a component that was never agreed on at all.
+  const agreementText = CHAT_COMPONENTS
+    .filter(c => agreements[c] !== undefined)
+    .map(c => `${COMPONENT_LABELS[c]}: ${agreements[c]}`)
     .join('\n')
 
   const checkinText = members.map(m => {
-    const lines = Object.entries(m.checkins).map(([comp, data]) => {
-      const r = data.rating ?? 'no rating'
-      const notes = data.notes ? Object.entries(data.notes).map(([k, v]) => `  ${k}: ${v}`).join('\n') : ''
-      return `  ${COMPONENT_LABELS[comp as ChatComponent]}: ${r}${notes ? '\n' + notes : ''}`
+    const lines = CHAT_COMPONENTS.map(comp => {
+      const data = m.checkins[comp]
+      const r = data?.rating ?? 'no rating'
+      const notes = data?.notes ? Object.entries(data.notes).map(([k, v]) => `  ${k}: ${v}`).join('\n') : ''
+      return `  ${COMPONENT_LABELS[comp]}: ${r}${notes ? '\n' + notes : ''}`
     }).join('\n')
     return `${m.displayName}:\n${lines}`
   }).join('\n\n')
@@ -259,232 +450,51 @@ ${NO_MEMBER_ATTRIBUTION_RULE}`
   }
 }
 
-export interface TaskProjectContext {
-  title: string | null
-  brief: string | null
-  deadline: string | null
-}
-
-export interface TaskMemberInput {
-  id: string
-  displayName: string
-  subject: Record<string, unknown>
-  divisionOfLabor: Record<string, unknown>
-}
-
-export interface TaskSuggestion {
-  title: string
-  description: string
-  assigneeMemberId: string | null
-  deadline: string | null
-}
-
-function buildTaskSuggestionsSchema(memberIds: string[]) {
-  const assigneeSchema = memberIds.length > 0
-    ? { anyOf: [{ type: 'string', enum: memberIds }, { type: 'null' }] }
-    : { type: 'null' }
-
-  return {
-    type: 'object',
-    properties: {
-      tasks: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            title: { type: 'string' },
-            description: { type: 'string' },
-            assignee_member_id: assigneeSchema,
-            deadline: { type: ['string', 'null'] },
-          },
-          required: ['title', 'description', 'assignee_member_id', 'deadline'],
-          additionalProperties: false,
-        },
-      },
-    },
-    required: ['tasks'],
-    additionalProperties: false,
-  }
-}
-
-export async function generateTaskSuggestions(
-  project: TaskProjectContext,
-  agreements: Partial<Record<ChatComponent, string>>,
-  members: TaskMemberInput[],
-): Promise<TaskSuggestion[]> {
-  const projectSection = [
-    project.title ? `Project title: ${project.title}` : '',
-    project.brief ? `Assignment brief: ${project.brief}` : '',
-    project.deadline ? `Team deadline: ${project.deadline}` : '',
-  ].filter(Boolean).join('\n') || 'No project details were provided.'
-
-  const agreementSection = (['object', 'division_of_labor'] as ChatComponent[])
-    .filter(c => agreements[c])
-    .map(c => `${COMPONENT_LABELS[c]}: ${agreements[c]}`)
-    .join('\n') || 'No agreement text available yet.'
-
-  const memberSection = members.map(m => {
-    const bits = [
-      m.subject.preferred_role ? `Preferred contributor style: ${Array.isArray(m.subject.preferred_role) ? (m.subject.preferred_role as string[]).join(', ') : m.subject.preferred_role}` : '',
-      m.divisionOfLabor.expected_role ? `Wants to lead: ${m.divisionOfLabor.expected_role}` : '',
-      m.divisionOfLabor.fair_split ? `Fair split preference: ${m.divisionOfLabor.fair_split}` : '',
-      m.divisionOfLabor.avoid ? `Wants to avoid: ${m.divisionOfLabor.avoid}` : '',
-    ].filter(Boolean).join('\n  ')
-    return `- ${m.displayName} (id: ${m.id})${bits ? `\n  ${bits}` : ''}`
-  }).join('\n')
-
-  const prompt = `You are helping a student team break their project into a concrete task list.
-
-${projectSection}
-
-What the team agreed on:
-${agreementSection}
-
-Team members and what they said about the role/contribution they want:
-${memberSection}
-
-Suggest 5 to 10 concrete tasks that would make progress on this project. For each task:
-- Give a short title and a 1-2 sentence description.
-- Suggest one owner by picking their id from the member list above, based on what they said about the role they want — leave assignee_member_id null if no member is a clear fit.
-- Suggest a deadline (YYYY-MM-DD) that falls on or before the team deadline if one was given; otherwise use your judgement based on the project timeline implied above, or leave it null if there's not enough information to guess.
-
-Make sure that the tasks are fairly distributed across the team based on the work required for each task, and according to the decisions made in the collaboration agreement.`
-
-  const schema = buildTaskSuggestionsSchema(members.map(m => m.id))
-  const message = await sendAiApiRequest<{
-    tasks: { title: string; description: string; assignee_member_id: string | null; deadline: string | null }[]
-  }>('default_model', 1800, prompt, schema)
-
-  return message.tasks.map(t => ({
-    title: t.title,
-    description: t.description,
-    assigneeMemberId: t.assignee_member_id,
-    deadline: t.deadline,
-  }))
-}
-
-const submissionSummarySchema = {
+const instructorSummarySchema = {
   type: 'object',
-  properties: { summary: { type: 'string' } },
-  required: ['summary'],
+  properties: {
+    summary: { type: 'string' },
+    watch_points: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['summary', 'watch_points'],
   additionalProperties: false,
 }
 
-export async function generateSubmissionSummary(
-  task: { title: string; description: string | null },
-  submission: { content: string; url: string | null }
-): Promise<string | null> {
-  const prompt = `A team member submitted work for a task. Write a 1-2 sentence plain-language summary of what they submitted, for teammates who need to review it quickly.
-
-Task: ${task.title}${task.description ? `\n${task.description}` : ''}
-
-Submission:
-${submission.content}${submission.url ? `\nLink: ${submission.url}` : ''}
-
-Be specific to what they actually wrote — do not add things they didn't say.`
-
-  try {
-    const message = await sendAiApiRequest<{ summary: string }>('fast_model', 300, prompt, submissionSummarySchema)
-    return message.summary
-  } catch {
-    return null
-  }
+export interface InstructorSummaryResult {
+  summary: string
+  watchPoints: string[]
 }
 
-export interface DeadlineTaskContext {
-  title: string
-  description: string | null
-  deadline: string
-}
+// Synthesizes the already-generated per-component prose (from
+// generateCheckinComparison) into a short instructor-facing read, rather
+// than re-deriving anything from raw check-in data itself.
+export async function generateInstructorCheckinSummary(
+  teamContext: { projectTitle: string | null },
+  cycleNumber: number,
+  flaggedComponents: ChatComponent[],
+  perComponent: Record<ChatComponent, string>,
+): Promise<InstructorSummaryResult> {
+  const projectSection = teamContext.projectTitle ? `Project: ${teamContext.projectTitle}\n` : ''
 
-export interface DeadlineActionSuggestion {
-  label: string
-  rationale: string
-  action: 'extend' | 'reassign' | 'custom'
-  extendDeadline: string | null
-  extendTime: string | null
-  reassignMemberId: string | null
-}
+  const componentSection = CHAT_COMPONENTS
+    .map(c => `${COMPONENT_LABELS[c]}${flaggedComponents.includes(c) ? ' (flagged)' : ''}: ${perComponent[c] ?? 'No note available.'}`)
+    .join('\n')
 
-function buildDeadlineSuggestionsSchema(candidateMemberIds: string[]) {
-  const reassignSchema = candidateMemberIds.length > 0
-    ? { anyOf: [{ type: 'string', enum: candidateMemberIds }, { type: 'null' }] }
-    : { type: 'null' }
+  const prompt = `You are writing a short instructor-facing read of a student team's check-in (cycle ${cycleNumber}), using CHAT (Cultural-Historical Activity Theory).
+${projectSection}
+Per-component analysis already generated for this team:
+${componentSection}
+
+Write a short plain-language paragraph (3-4 sentences) summarizing how this team is doing overall, for an instructor scanning many teams quickly. Then list up to 3 short "watch point" bullets naming the most important things this instructor should keep an eye on — based only on what's flagged above. If nothing is flagged, return an empty watch_points list and say so plainly in the summary.
+
+${NO_MEMBER_ATTRIBUTION_RULE}`
+
+  const message = await sendAiApiRequest<{ summary: string; watch_points: string[] }>('fast_model', 500, prompt, instructorSummarySchema)
 
   return {
-    type: 'object',
-    properties: {
-      suggestions: {
-        type: 'array',
-        maxItems: 2,
-        items: {
-          type: 'object',
-          properties: {
-            label: { type: 'string' },
-            rationale: { type: 'string' },
-            action: { type: 'string', enum: ['extend', 'reassign', 'custom'] },
-            extend_deadline: { type: ['string', 'null'] },
-            extend_time: { type: ['string', 'null'] },
-            reassign_member_id: reassignSchema,
-          },
-          required: ['label', 'rationale', 'action', 'extend_deadline', 'extend_time', 'reassign_member_id'],
-          additionalProperties: false,
-        },
-      },
-    },
-    required: ['suggestions'],
-    additionalProperties: false,
+    summary: message.summary,
+    watchPoints: message.watch_points,
   }
-}
-
-// Suggestions aren't limited to extend/reassign — 'custom' carries no structured
-// effect at all (e.g. "Schedule a meeting"), so a team can act on it without the
-// AI needing to map every recommendation onto the two structured options.
-export async function generateDeadlineActionSuggestions(
-  task: DeadlineTaskContext,
-  agreements: Partial<Record<ChatComponent, string>>,
-  members: { id: string; displayName: string }[],
-  currentAssigneeId: string | null
-): Promise<DeadlineActionSuggestion[]> {
-  const agreementSection = (['rules', 'division_of_labor'] as ChatComponent[])
-    .filter(c => agreements[c])
-    .map(c => `${COMPONENT_LABELS[c]}: ${agreements[c]}`)
-    .join('\n') || 'No agreement text available.'
-
-  // Reassigning to whoever already missed the deadline isn't a suggestion.
-  const candidates = members.filter(m => m.id !== currentAssigneeId)
-  const memberSection = candidates.map(m => `- ${m.displayName} (id: ${m.id})`).join('\n') || 'No other members on the team.'
-
-  const prompt = `A student team missed a deadline on one of their tasks. Suggest 1-2 concrete next steps grounded specifically in what this team already agreed to about how they work together.
-
-Task: ${task.title}${task.description ? `\n${task.description}` : ''}
-Deadline missed: ${task.deadline}
-
-What the team agreed on:
-${agreementSection}
-
-Other team members (for a reassignment suggestion):
-${memberSection}
-
-For each suggestion:
-- Write a short label (e.g. "Extend to Friday and check in", "Hand it to Dan", "Schedule a meeting").
-- Write a 1 sentence rationale that names the specific agreement text driving the suggestion — do not suggest something the team never agreed to.
-- Pick an action: "extend" (propose extend_deadline as YYYY-MM-DD, after today; also propose extend_time as 24-hour HH:MM if the agreement text implies a specific time — e.g. a meeting time or work-hours cutoff — otherwise leave extend_time null and it'll default to end of day), "reassign" (propose reassign_member_id from the list above), or "custom" (anything else — leave extend_deadline, extend_time, and reassign_member_id null).
-- Only suggest something the agreement text actually supports. If nothing in the agreement text supports a confident suggestion, return fewer suggestions rather than inventing one.`
-
-  const schema = buildDeadlineSuggestionsSchema(candidates.map(m => m.id))
-  const message = await sendAiApiRequest<{
-    suggestions: { label: string; rationale: string; action: 'extend' | 'reassign' | 'custom'; extend_deadline: string | null; extend_time: string | null; reassign_member_id: string | null }[]
-  }>('fast_model', 600, prompt, schema)
-
-  return message.suggestions.map(s => ({
-    label: s.label,
-    rationale: s.rationale,
-    action: s.action,
-    extendDeadline: s.extend_deadline,
-    extendTime: s.extend_time,
-    reassignMemberId: s.reassign_member_id,
-  }))
 }
 
 const finalReportSchema = {
@@ -511,12 +521,6 @@ export interface FinalReportPlantSummary {
   finalState: string
 }
 
-export interface FinalReportTaskSummary {
-  done: number
-  total: number
-  declinedSubmissions: number
-}
-
 export interface FinalReportSummaryResult {
   summary: string
   highlights: string[]
@@ -527,7 +531,6 @@ export async function generateFinalReportSummary(
   project: FinalReportProjectContext,
   agreements: Partial<Record<ChatComponent, string>>,
   plant: FinalReportPlantSummary,
-  tasks: FinalReportTaskSummary,
 ): Promise<FinalReportSummaryResult> {
   const projectSection = [
     project.title ? `Project title: ${project.title}` : '',
@@ -548,8 +551,6 @@ What the team agreed on at the start:
 ${agreementSection}
 
 How the plant (the team's shared health indicator) moved over the project: ${plant.missedDeadlines} deadline(s) were missed, ${plant.recoveredDeadlines} of those were recovered by finishing and getting the work approved, and check-ins applied ${plant.checkinDecrements} additional level decrement(s) for CHAT-alignment tension. The plant ended the project in state: ${plant.finalState}.
-
-Task delivery: ${tasks.done} of ${tasks.total} tasks were completed and approved. ${tasks.declinedSubmissions} submission(s) were declined by a teammate before being approved.
 
 Write a 3-4 sentence plain-language narrative of how this team collaborated and delivered, covering both how they worked together and how the work actually got done. If a final grade is given, connect it to the collaboration story — say plainly how the process related to the result. Do not restate the grade on its own, and do not speculate about a grade that wasn't given. Then list 2-4 short "went well" highlight bullets, and 2-4 short constructive growth-area bullets (framed for what to watch for next time, not blame). Be specific to what actually happened above — do not invent details that weren't given.
 

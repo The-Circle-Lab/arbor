@@ -4,9 +4,15 @@ import { hashPassword } from '@/lib/auth/password'
 import { signSessionToken, setSessionCookie } from '@/lib/auth/jwt'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const VALID_ROLES = ['student', 'instructor']
+
+function isValidRole(value: unknown): value is 'student' | 'instructor' {
+  return typeof value === 'string' && VALID_ROLES.includes(value)
+}
 
 export async function POST(req: Request) {
-  const { email, password, displayName, pronouns } = await req.json()
+  const { email, password, displayName, pronouns, role } = await req.json()
+  const normalizedRole = isValidRole(role) ? role : 'student'
 
   const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : ''
   if (!EMAIL_RE.test(normalizedEmail)) {
@@ -29,11 +35,11 @@ export async function POST(req: Request) {
 
   const passwordHash = await hashPassword(password)
 
-  let user: { id: string; email: string; token_version: number }
+  let user: { id: string; email: string; role: string; token_version: number }
   try {
-    const inserted = await queryOne<{ id: string; email: string; token_version: number }>(
-      'INSERT INTO users (email, password_hash, display_name, pronouns) VALUES ($1, $2, $3, $4) RETURNING id, email, token_version',
-      [normalizedEmail, passwordHash, displayName.trim(), pronouns?.trim() || null]
+    const inserted = await queryOne<{ id: string; email: string; role: string; token_version: number }>(
+      'INSERT INTO users (email, password_hash, display_name, pronouns, role) VALUES ($1, $2, $3, $4, $5) RETURNING id, email, role, token_version',
+      [normalizedEmail, passwordHash, displayName.trim(), pronouns?.trim() || null, normalizedRole]
     )
     if (!inserted) throw new Error('Insert returned no row')
     user = inserted
@@ -47,5 +53,5 @@ export async function POST(req: Request) {
   const token = await signSessionToken(user.id, user.token_version)
   await setSessionCookie(token)
 
-  return NextResponse.json({ id: user.id, email: user.email }, { status: 201 })
+  return NextResponse.json({ id: user.id, email: user.email, role: user.role }, { status: 201 })
 }

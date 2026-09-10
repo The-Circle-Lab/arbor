@@ -5,7 +5,7 @@ export type PlantHealthSource = 'deadline_missed' | 'task_recovered' | 'checkin'
 
 // Index = level. New teams with no ledger rows yet default to level 3 (thriving).
 const LEVEL_STATES: PlantState[] = ['dead', 'wilting', 'doing_okay', 'thriving']
-const DEFAULT_LEVEL = 3
+export const DEFAULT_LEVEL = 3
 
 // Advisory-lock classid for plant-health ledger writes. Paired with
 // pg_advisory_xact_lock's 2-arg form so this never collides with unrelated
@@ -32,7 +32,6 @@ export interface ApplyPlantHealthDeltaParams {
   teamId: string
   delta: number
   source: PlantHealthSource
-  taskId?: string | null
   cycleNumber?: number | null
   detail?: Record<string, unknown>
 }
@@ -61,9 +60,9 @@ export async function applyPlantHealthDelta(
   const appliedDelta = level - current
 
   await tx.query(
-    `INSERT INTO plant_health_events (team_id, level, delta, source, task_id, cycle_number, detail)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
-    [params.teamId, level, appliedDelta, params.source, params.taskId ?? null, params.cycleNumber ?? null, JSON.stringify(params.detail ?? {})]
+    `INSERT INTO plant_health_events (team_id, level, delta, source, cycle_number, detail)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+    [params.teamId, level, appliedDelta, params.source, params.cycleNumber ?? null, JSON.stringify(params.detail ?? {})]
   )
 
   return { level, state: levelToState(level) }

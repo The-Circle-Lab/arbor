@@ -12,6 +12,7 @@ export default function SignupPage() {
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [pronouns, setPronouns] = useState('')
+  const [role, setRole] = useState<'student' | 'instructor'>('student')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -25,12 +26,13 @@ export default function SignupPage() {
       const res = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, displayName, pronouns }),
+        body: JSON.stringify({ email, password, displayName, pronouns, role }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Something went wrong.')
       await refresh()
       router.push('/')
+      router.refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong.')
     } finally {
@@ -84,6 +86,22 @@ export default function SignupPage() {
             <option value="they/them">They/Them</option>
             <option value="prefer not to say">Prefer not to say</option>
           </select>
+          <div className="flex rounded-lg border border-stone-300 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setRole('student')}
+              className={`flex-1 py-3 text-sm font-medium transition ${role === 'student' ? 'bg-green-700 text-white' : 'bg-white text-stone-600 hover:bg-stone-50'}`}
+            >
+              I&apos;m a student
+            </button>
+            <button
+              type="button"
+              onClick={() => setRole('instructor')}
+              className={`flex-1 py-3 text-sm font-medium transition ${role === 'instructor' ? 'bg-green-700 text-white' : 'bg-white text-stone-600 hover:bg-stone-50'}`}
+            >
+              I&apos;m an instructor
+            </button>
+          </div>
           {error && <p className="text-red-500 text-sm">{error}</p>}
           <button
             type="submit"

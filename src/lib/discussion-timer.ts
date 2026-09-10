@@ -2,7 +2,7 @@ import { query, queryOne, withTransaction } from './db'
 import { getTeamStatus } from './phase'
 
 // Single owning module for discussion_timers / discussion_timer_extensions —
-// same convention as agreement-approvals.ts and task-approvals.ts.
+// same convention as agreement-approvals.ts.
 
 export type DiscussionStep = 'AGREEING' | 'CHECKIN_AGREE'
 

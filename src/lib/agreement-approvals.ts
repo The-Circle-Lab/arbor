@@ -3,9 +3,7 @@ import { ChatComponent } from './chat-components'
 
 // Single owning module for agreement_approvals — every route that reads,
 // records, or invalidates a component's approval goes through here instead
-// of hand-writing the same queries. Same shape as task-approvals.ts; each
-// approval-gated feature keeps its own table (component-scoped here vs.
-// team-wide for tasks) but shares this convention instead of a merged schema.
+// of hand-writing the same queries.
 
 export interface AgreementApproval {
   component: string

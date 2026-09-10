@@ -4,13 +4,14 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArbourLogo } from '@/components/ArbourLogo'
 import { WaitingRoom } from '@/components/WaitingRoom'
-import { useSession } from '@/lib/session'
+import { useSession, isInstructorUser } from '@/lib/session'
 
 export default function LandingPage() {
   const router = useRouter()
   const { loading, user, memberships, refresh } = useSession()
   const [mode, setMode] = useState<'home' | 'create' | 'join'>('home')
   const [teamName, setTeamName] = useState('')
+  const [courseCode, setCourseCode] = useState('')
   const [joinCode, setJoinCode] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -18,18 +19,19 @@ export default function LandingPage() {
   useEffect(() => {
     if (loading || submitting) return
     if (!user) { router.replace('/login'); return }
+    if (isInstructorUser(user)) { router.replace('/instructor'); return }
     if (memberships.length === 1) router.replace(`/${memberships[0].join_code}`)
   }, [loading, user, memberships, submitting, router])
 
   async function handleCreate() {
-    if (!teamName.trim()) return setError('Please fill in all fields.')
+    if (!teamName.trim() || !courseCode.trim()) return setError('Please fill in all fields.')
     setSubmitting(true)
     setError('')
     try {
       const teamRes = await fetch('/api/teams', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: teamName }),
+        body: JSON.stringify({ name: teamName, courseJoinCode: courseCode.trim() || undefined }),
       })
       const team = await teamRes.json()
       if (!teamRes.ok) throw new Error(team.error)
@@ -63,10 +65,11 @@ export default function LandingPage() {
     }
   }
 
-  // Loading, not-yet-authenticated (Proxy redirects momentarily), or the
-  // single-team case (auto-redirecting into that team) all show the same
-  // waiting state rather than flashing the create/join UI underneath.
-  if (loading || !user || memberships.length === 1) {
+  // Loading, not-yet-authenticated (Proxy redirects momentarily), an
+  // instructor (auto-redirecting to /instructor), or the single-team case
+  // (auto-redirecting into that team) all show the same waiting state rather
+  // than flashing the create/join UI underneath.
+  if (loading || !user || isInstructorUser(user) || memberships.length === 1) {
     return (
       <main className="min-h-screen bg-stone-50 flex items-center justify-center p-6">
         <WaitingRoom message="Loading" subMessage="Just a moment" />
@@ -153,6 +156,14 @@ export default function LandingPage() {
               placeholder="Team name (e.g. CS446 Group 3)"
               value={teamName}
               onChange={e => setTeamName(e.target.value)}
+            />
+            <input
+              className="border border-stone-300 rounded-lg px-4 py-3 text-stone-800 tracking-widest focus:outline-none focus:ring-2 focus:ring-green-600"
+              placeholder="Course code"
+              value={courseCode}
+              onChange={e => setCourseCode(e.target.value.toUpperCase())}
+              maxLength={6}
+              required
             />
             {error && <p className="text-red-500 text-sm">{error}</p>}
             <button

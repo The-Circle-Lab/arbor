@@ -7,6 +7,7 @@ export interface SessionUser {
   email: string
   display_name: string
   pronouns: string | null
+  role: 'student' | 'instructor'
 }
 
 export interface Membership {
@@ -78,4 +79,8 @@ export function useSession(): SessionContextValue {
 export function getMembership(memberships: Membership[], code: string): Membership | null {
   const upper = code.toUpperCase()
   return memberships.find(m => m.join_code === upper) ?? null
+}
+
+export function isInstructorUser(user: SessionUser | null): boolean {
+  return user?.role === 'instructor'
 }

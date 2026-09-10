@@ -33,10 +33,9 @@ export default function PlantIntroPage() {
       cta: 'Makes sense →',
     },
     {
-      heading: 'Go do your project.',
-      body: 'Come back here after your first real working session or team meeting. That\'s when your first check-in happens, not right now.',
+      heading: 'Time for your check-in.',
+      body: 'It\'s time to check in on how your team is working together. Your answers shape the plant.',
       cta: 'We\'re ready to check in now →',
-      secondary: 'We\'ll come back later',
     },
   ]
 
@@ -49,11 +48,6 @@ export default function PlantIntroPage() {
     } else {
       setStep(s => s + 1)
     }
-  }
-
-  function handleLater() {
-    // Go back to hub — they'll check in when they return
-    router.push(`/${code}`)
   }
 
   return (
@@ -85,23 +79,6 @@ export default function PlantIntroPage() {
           {current.cta}
         </button>
 
-        {isLast && (
-          <button
-            onClick={() => router.push(`/${code}/tasks`)}
-            className="mt-3 w-full bg-green-700/10 text-green-800 border border-green-700/20 rounded-xl py-3 text-sm font-medium hover:bg-green-700/20 transition"
-          >
-            View tasks
-          </button>
-        )}
-
-        {current.secondary && (
-          <button
-            onClick={handleLater}
-            className="mt-3 w-full text-sm text-stone-400 hover:text-stone-600 transition"
-          >
-            {current.secondary}
-          </button>
-        )}
       </div>
     </main>
   )

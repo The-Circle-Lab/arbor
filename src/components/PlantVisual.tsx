@@ -6,6 +6,10 @@ export type PlantState = 'thriving' | 'doing_okay' | 'wilting' | 'dead'
 export type PlantType = 'default' | 'cactus' | 'flower' | 'tree'
 export const PLANT_TYPES: PlantType[] = ['default', 'cactus', 'flower', 'tree']
 
+export function isPlantType(value: string | null): value is PlantType {
+  return value !== null && PLANT_TYPES.some(t => t === value)
+}
+
 interface Props {
   state: PlantState
   plantType?: PlantType
@@ -282,6 +286,15 @@ export const STATE_LABELS: Record<PlantState, string> = {
   doing_okay: 'Doing okay',
   wilting: 'Wilting',
   dead: 'Dead',
+}
+
+// Single source of truth for state → color so a given plant state reads the
+// same way wherever it's shown (student plant page, instructor dashboard, ...).
+export const STATE_COLORS: Record<PlantState, { bg: string; text: string; border: string }> = {
+  thriving: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' },
+  doing_okay: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
+  wilting: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' },
+  dead: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200' },
 }
 
 export const PLANT_TYPE_LABELS: Record<PlantType, string> = {

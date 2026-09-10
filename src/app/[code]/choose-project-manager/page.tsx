@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useSession, getMembership } from '@/lib/session'
+import { AllMembersJoinedModal } from '@/components/AllMembersJoinedModal'
 
 interface Member {
   id: string
@@ -27,6 +28,7 @@ export default function ChooseProjectManagerPage() {
   const [votes, setVotes] = useState<Record<string, string>>({})
   const [myVote, setMyVote] = useState<string | null>(null)
   const [voting, setVoting] = useState(false)
+  const [awaitingJoinConfirmation, setAwaitingJoinConfirmation] = useState(true)
 
   useEffect(() => {
     if (loading) return
@@ -77,6 +79,12 @@ export default function ChooseProjectManagerPage() {
 
   return (
     <main className="min-h-screen bg-stone-50 flex items-center justify-center p-6">
+      {awaitingJoinConfirmation && (
+        <AllMembersJoinedModal
+          onConfirm={() => setAwaitingJoinConfirmation(false)}
+          onDeny={() => router.push(`/${code}/lobby`)}
+        />
+      )}
       <div className="w-full max-w-lg">
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-stone-800">Choose your Project Manager</h1>
@@ -89,7 +97,7 @@ export default function ChooseProjectManagerPage() {
           <p className="text-xs text-green-700 uppercase tracking-wide font-semibold mb-3">What the project manager does</p>
           <ul className="text-sm text-green-900 space-y-2">
             <li className="flex gap-2"><span>•</span> Inputs the project details. </li>
-            <li className="flex gap-2"><span>•</span> Records group decisions about task assignment or negotiation. </li>
+            <li className="flex gap-2"><span>•</span> Records group decisions and negotiations. </li>
             <li className="flex gap-2"><span>•</span> Serves as the “scribe” of the group after group discussions. </li>
           </ul>
           <p className="text-xs text-green-700/80 mt-3">

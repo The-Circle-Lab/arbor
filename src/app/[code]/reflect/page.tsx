@@ -1,13 +1,54 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useSession, getMembership } from '@/lib/session'
-import { CHAT_COMPONENTS, COMPONENT_LABELS, COMPONENT_DESCRIPTIONS, REFLECTION_QUESTIONS, ChatComponent } from '@/lib/chat-components'
+import {
+  COMPONENT_LABELS,
+  COMPONENT_DESCRIPTIONS,
+  REFLECTION_QUESTIONS,
+  SUBJECT_LABEL,
+  SUBJECT_DESCRIPTION,
+  SUBJECT_QUESTIONS,
+  ChatComponent,
+} from '@/lib/chat-components'
 import { WaitingRoom } from '@/components/WaitingRoom'
 import { ArbourLogo } from '@/components/ArbourLogo'
 
-type Responses = Record<ChatComponent, Record<string, string | string[] | Record<string, string>>>
+// Subject is no longer a shared CHAT component, but the reflect wizard keeps
+// asking its 3 questions in the same spot (2nd, right after Objective) — it's
+// just sourced from SUBJECT_QUESTIONS and stored separately (subjectResponses)
+// instead of alongside the 5 real ChatComponents.
+type ReflectStep = 'subject' | ChatComponent
+
+const STEPS: ReflectStep[] = ['object', 'subject', 'division_of_labor', 'rules', 'tools', 'community']
+
+type ResponseBag = Record<string, string | string[] | Record<string, string>>
+type Responses = Record<ChatComponent, ResponseBag>
+
+function getQuestionsForStep(step: ReflectStep) {
+  return step === 'subject' ? SUBJECT_QUESTIONS : REFLECTION_QUESTIONS[step]
+}
+
+function shuffleArray<T>(arr: T[]): T[] {
+  const result = [...arr]
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[result[i], result[j]] = [result[j], result[i]]
+  }
+  return result
+}
+
+function shuffleWithOtherLast(options: string[]): string[] {
+  const rest = options.filter(o => o !== 'Other')
+  const hasOther = rest.length !== options.length
+  const shuffled = shuffleArray(rest)
+  return hasOther ? [...shuffled, 'Other'] : shuffled
+}
+
+function getDisplayOptions(map: Map<string, string[]>, step: ReflectStep, q: { id: string; options?: string[] }): string[] {
+  return map.get(`${step}-${q.id}`) ?? q.options ?? []
+}
 
 export default function ReflectPage() {
   const { code } = useParams<{ code: string }>()
@@ -16,14 +57,28 @@ export default function ReflectPage() {
   const membership = getMembership(memberships, code)
 
   const [responses, setResponses] = useState<Partial<Responses>>({})
+  const [subjectResponses, setSubjectResponses] = useState<ResponseBag>({})
   const [currentIdx, setCurrentIdx] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [submitError, setSubmitError] = useState(false)
 
   useEffect(() => {
     if (loading) return
     if (!user || !membership) { router.replace('/'); return }
   }, [loading, user, membership, router])
+
+  const shuffledOptionsMap = useMemo(() => {
+    const map = new Map<string, string[]>()
+    for (const step of STEPS) {
+      for (const q of getQuestionsForStep(step)) {
+        if (q.shuffleOptions && q.options) {
+          map.set(`${step}-${q.id}`, shuffleWithOtherLast(q.options))
+        }
+      }
+    }
+    return map
+  }, [])
 
   if (loading || !user || !membership) {
     return (
@@ -33,51 +88,71 @@ export default function ReflectPage() {
     )
   }
 
-  const currentComponent = CHAT_COMPONENTS[currentIdx]
-  const questions = REFLECTION_QUESTIONS[currentComponent]
-  const isLast = currentIdx === CHAT_COMPONENTS.length - 1
+  const currentStep = STEPS[currentIdx]
+  const questions = getQuestionsForStep(currentStep)
+  const isLast = currentIdx === STEPS.length - 1
 
-  function setValue(component: ChatComponent, key: string, value: string | string[]) {
+  function getCompResponses(step: ReflectStep): ResponseBag {
+    return step === 'subject' ? subjectResponses : (responses[step] ?? {})
+  }
+
+  function setValue(step: ReflectStep, key: string, value: string | string[] | Record<string, string>) {
+    if (step === 'subject') {
+      setSubjectResponses(prev => ({ ...prev, [key]: value }))
+      return
+    }
     setResponses(prev => ({
       ...prev,
-      [component]: { ...(prev[component] ?? {}), [key]: value },
+      [step]: { ...(prev[step] ?? {}), [key]: value },
     }))
   }
 
-  function toggleMultiselect(component: ChatComponent, key: string, option: string) {
-    const current = (responses[component]?.[key] as string[] | undefined) ?? []
+  function toggleMultiselect(step: ReflectStep, key: string, option: string) {
+    const bag = getCompResponses(step)
+    const value = bag[key]
+    const current = Array.isArray(value) ? value : []
     const next = current.includes(option) ? current.filter(o => o !== option) : [...current, option]
-    setValue(component, key, next)
+    setValue(step, key, next)
   }
 
   function canAdvance() {
-    const compResponses = responses[currentComponent] ?? {}
+    const compResponses = getCompResponses(currentStep)
     return questions.every(q => {
-      if (q.type === 'multiselect') return ((compResponses[q.id] as string[]) ?? []).length > 0
-      if (q.type === 'choice') return !!(compResponses[q.id] as string | undefined)
+      const value = compResponses[q.id]
+      if (q.type === 'multiselect') return Array.isArray(value) && value.length > 0
+      if (q.type === 'choice') return typeof value === 'string' && value.length > 0
       if (q.type === 'priority-rank') {
-        const sel = (compResponses[q.id] as Record<string, string>) ?? {}
+        const sel: Record<string, string> = value && typeof value === 'object' && !Array.isArray(value) ? value : {}
         return (q.options ?? []).every(opt => !!sel[opt])
       }
-      return (compResponses[q.id] as string | undefined)?.trim()
+      return typeof value === 'string' && value.trim().length > 0
     })
   }
 
   function setPriorityLevel(questionId: string, option: string, level: string) {
-    const current = (responses[currentComponent]?.[questionId] as Record<string, string>) ?? {}
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    setValue(currentComponent, questionId, { ...current, [option]: level } as any)
+    const bag = getCompResponses(currentStep)
+    const raw = bag[questionId]
+    const current: Record<string, string> = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
+    setValue(currentStep, questionId, { ...current, [option]: level })
   }
 
   async function handleSubmit() {
+    if (!membership) return
     setSubmitting(true)
+    setSubmitError(false)
     try {
-      await fetch('/api/reflections', {
+      const res = await fetch('/api/reflections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberId: membership!.member_id, responses }),
+        body: JSON.stringify({ memberId: membership.member_id, responses, subjectResponses }),
       })
+      if (!res.ok) {
+        setSubmitError(true)
+        return
+      }
       setSubmitted(true)
+    } catch {
+      setSubmitError(true)
     } finally {
       setSubmitting(false)
     }
@@ -97,7 +172,9 @@ export default function ReflectPage() {
     )
   }
 
-  const compResponses = responses[currentComponent] ?? {}
+  const compResponses = getCompResponses(currentStep)
+  const stepLabel = currentStep === 'subject' ? SUBJECT_LABEL : COMPONENT_LABELS[currentStep]
+  const stepDescription = currentStep === 'subject' ? SUBJECT_DESCRIPTION : COMPONENT_DESCRIPTIONS[currentStep]
 
   return (
     <main className="min-h-screen bg-stone-50 p-6 flex flex-col items-center">
@@ -108,21 +185,21 @@ export default function ReflectPage() {
           <div className="flex-1">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-stone-400 font-medium uppercase tracking-wide">
-                {`${currentIdx + 1} of ${CHAT_COMPONENTS.length} · Individual reflection`}
+                {`${currentIdx + 1} of ${STEPS.length} · Individual reflection`}
               </span>
             </div>
             <div className="w-full bg-stone-200 rounded-full h-1.5">
               <div
                 className="bg-green-600 h-1.5 rounded-full transition-all"
-                style={{ width: `${((currentIdx + 1) / CHAT_COMPONENTS.length) * 100}%` }}
+                style={{ width: `${((currentIdx + 1) / STEPS.length) * 100}%` }}
               />
             </div>
           </div>
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm border border-stone-100 p-6">
-          <h2 className="text-xl font-bold text-stone-800 mb-0.5">{COMPONENT_LABELS[currentComponent]}</h2>
-          <p className="text-xs text-stone-400 mb-5">{COMPONENT_DESCRIPTIONS[currentComponent]}</p>
+          <h2 className="text-xl font-bold text-stone-800 mb-0.5">{stepLabel}</h2>
+          <p className="text-xs text-stone-400 mb-5">{stepDescription}</p>
 
           <div className="flex flex-col gap-6">
             {questions.map(q => (
@@ -134,22 +211,22 @@ export default function ReflectPage() {
                     className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-800 resize-none focus:outline-none focus:ring-2 focus:ring-green-500"
                     rows={3}
                     value={(compResponses[q.id] as string) ?? ''}
-                    onChange={e => setValue(currentComponent, q.id, e.target.value)}
+                    onChange={e => setValue(currentStep, q.id, e.target.value)}
                     placeholder="Your answer…"
                   />
                 )}
 
                 {q.type === 'choice' && q.options && (
                   <div className="flex flex-col gap-2">
-                    {q.options.map(opt => {
+                    {getDisplayOptions(shuffledOptionsMap, currentStep, q).map(opt => {
                       const selected = compResponses[q.id] === opt
                       return (
                         <label key={opt} className={`flex items-center gap-3 cursor-pointer border rounded-lg px-3 py-2.5 transition ${selected ? 'border-green-500 bg-green-50' : 'border-stone-200 hover:bg-stone-50'}`}>
                           <input
                             type="radio"
-                            name={`${currentComponent}-${q.id}`}
+                            name={`${currentStep}-${q.id}`}
                             checked={selected}
-                            onChange={() => setValue(currentComponent, q.id, opt)}
+                            onChange={() => setValue(currentStep, q.id, opt)}
                             className="accent-green-600"
                           />
                           <span className="text-sm text-stone-700">{opt}</span>
@@ -161,7 +238,7 @@ export default function ReflectPage() {
                         className="border border-stone-200 rounded-lg px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-1 focus:ring-green-500"
                         placeholder="Please specify…"
                         value={(compResponses[`${q.id}_other`] as string) ?? ''}
-                        onChange={e => setValue(currentComponent, `${q.id}_other`, e.target.value)}
+                        onChange={e => setValue(currentStep, `${q.id}_other`, e.target.value)}
                       />
                     )}
                     {q.withOpenText && (
@@ -169,7 +246,7 @@ export default function ReflectPage() {
                         className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-800 resize-none focus:outline-none focus:ring-2 focus:ring-green-500 mt-1"
                         rows={2}
                         value={(compResponses[`${q.id}_open`] as string) ?? ''}
-                        onChange={e => setValue(currentComponent, `${q.id}_open`, e.target.value)}
+                        onChange={e => setValue(currentStep, `${q.id}_open`, e.target.value)}
                         placeholder="Anything to add in your own words…"
                       />
                     )}
@@ -178,14 +255,14 @@ export default function ReflectPage() {
 
                 {q.type === 'multiselect' && q.options && (
                   <div className="flex flex-col gap-2">
-                    {q.options.map(opt => {
+                    {getDisplayOptions(shuffledOptionsMap, currentStep, q).map(opt => {
                       const selected = ((compResponses[q.id] as string[]) ?? []).includes(opt)
                       return (
                         <label key={opt} className={`flex items-center gap-3 cursor-pointer border rounded-lg px-3 py-2.5 transition ${selected ? 'border-green-500 bg-green-50' : 'border-stone-200 hover:bg-stone-50'}`}>
                           <input
                             type="checkbox"
                             checked={selected}
-                            onChange={() => toggleMultiselect(currentComponent, q.id, opt)}
+                            onChange={() => toggleMultiselect(currentStep, q.id, opt)}
                             className="accent-green-600"
                           />
                           <span className="text-sm text-stone-700">{opt}</span>
@@ -194,7 +271,7 @@ export default function ReflectPage() {
                               className="border border-stone-200 rounded px-2 py-1 text-sm flex-1 focus:outline-none focus:ring-1 focus:ring-green-500"
                               placeholder="Specify…"
                               value={(compResponses[`${q.id}_other`] as string) ?? ''}
-                              onChange={e => setValue(currentComponent, `${q.id}_other`, e.target.value)}
+                              onChange={e => setValue(currentStep, `${q.id}_other`, e.target.value)}
                             />
                           )}
                         </label>
@@ -205,7 +282,7 @@ export default function ReflectPage() {
                         className="w-full border border-stone-200 rounded-lg px-3 py-2 text-sm text-stone-800 resize-none focus:outline-none focus:ring-2 focus:ring-green-500 mt-1"
                         rows={2}
                         value={(compResponses[`${q.id}_open`] as string) ?? ''}
-                        onChange={e => setValue(currentComponent, `${q.id}_open`, e.target.value)}
+                        onChange={e => setValue(currentStep, `${q.id}_open`, e.target.value)}
                         placeholder="Anything to add in your own words…"
                       />
                     )}
@@ -214,7 +291,7 @@ export default function ReflectPage() {
 
                 {q.type === 'priority-rank' && q.options && (
                   <div className="flex flex-col gap-2">
-                    {q.options.map(opt => {
+                    {getDisplayOptions(shuffledOptionsMap, currentStep, q).map(opt => {
                       const sel = (compResponses[q.id] as Record<string, string>) ?? {}
                       const current = sel[opt]
                       return (
@@ -249,19 +326,33 @@ export default function ReflectPage() {
             ))}
           </div>
 
+          {submitError && (
+            <p className="text-sm text-red-600 mt-4">
+              Something went wrong submitting your reflection. Please try again.
+            </p>
+          )}
+
           <div className="flex justify-between mt-6 gap-3">
             {currentIdx > 0 && (
               <button
-                onClick={() => setCurrentIdx(i => i - 1)}
+                onClick={() => { setCurrentIdx(i => i - 1); setSubmitError(false) }}
                 className="px-4 py-2 text-sm text-stone-500 border border-stone-200 rounded-lg hover:bg-stone-50"
               >
                 Back
               </button>
             )}
             <div className="flex-1" />
+            {currentStep === 'subject' && (
+              <button
+                onClick={() => { setSubjectResponses({}); setCurrentIdx(i => i + 1); setSubmitError(false) }}
+                className="px-4 py-2 text-sm text-stone-500 border border-stone-200 rounded-lg hover:bg-stone-50"
+              >
+                Skip
+              </button>
+            )}
             {!isLast ? (
               <button
-                onClick={() => setCurrentIdx(i => i + 1)}
+                onClick={() => { setCurrentIdx(i => i + 1); setSubmitError(false) }}
                 disabled={!canAdvance()}
                 className="px-5 py-2 bg-green-700 text-white text-sm rounded-lg hover:bg-green-800 disabled:opacity-40 transition"
               >

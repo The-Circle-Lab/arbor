@@ -4,14 +4,19 @@ import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useSession, getMembership } from '@/lib/session'
 import { WaitingRoom } from '@/components/WaitingRoom'
-import type { Phase } from '@/lib/phase'
+import {
+  TEAM_CREATION,
+  INDIVIDUAL_REFLECTION,
+  REVEAL,
+  AGREEING,
+} from '@/lib/team-stage'
 
 interface TeamData {
   id: string
   name: string
   join_code: string
   members: { id: string; display_name: string }[]
-  status: { phase: Phase; hasProjectManager: boolean; teamSize: number; reflectionsSubmitted: number }
+  status: { stage: number; hasProjectManager: boolean; teamSize: number; reflectionsSubmitted: number }
   plant_type?: string | null
   plant_votes?: Record<string, string> | null
 }
@@ -44,19 +49,16 @@ export default function TeamHub() {
         const memberExists = data.members.some(m => m.id === membership.member_id)
         if (!memberExists) { setNotMember(true); return }
 
-        const phase = data.status.phase
+        const stage = data.status.stage
+        const isReflecting = stage === TEAM_CREATION || stage === INDIVIDUAL_REFLECTION
         const plantChosen = data.plant_type && data.plant_votes && Object.keys(data.plant_votes).length > 0
-        if (phase === 'REFLECTING' && !data.status.hasProjectManager) router.push(`/${code}/choose-project-manager`)
-        else if (phase === 'REFLECTING' && !plantChosen) router.push(`/${code}/choose-plant`)
-        else if (phase === 'REFLECTING') router.push(`/${code}/reflect`)
-        else if (phase === 'REVEAL') router.push(`/${code}/reveal`)
-        else if (phase === 'AGREEING') router.push(`/${code}/agree`)
-        else if (phase === 'TASKS') router.push(`/${code}/create-tasks`)
-        else if (phase === 'CHECKIN_1') router.push(`/${code}/checkin/1`)
-        else if (phase === 'PLANT_1') router.push(`/${code}/plant/1`)
-        else if (phase === 'CHECKIN_2') router.push(`/${code}/checkin-intro`)
-        else if (phase === 'PLANT_2') router.push(`/${code}/plant/2`)
-        else if (phase === 'DONE') router.push(`/${code}/start`)
+        if (isReflecting && !data.status.hasProjectManager && data.members.length < 4) router.push(`/${code}/lobby`)
+        else if (isReflecting && !data.status.hasProjectManager) router.push(`/${code}/choose-project-manager`)
+        else if (isReflecting && !plantChosen) router.push(`/${code}/choose-plant`)
+        else if (isReflecting) router.push(`/${code}/reflect`)
+        else if (stage === REVEAL) router.push(`/${code}/reveal`)
+        else if (stage === AGREEING) router.push(`/${code}/agree`)
+        else router.push(`/${code}/start`)
       } catch { /* retry on next poll */ }
     }
 

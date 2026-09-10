@@ -2,12 +2,11 @@ import { NextResponse } from 'next/server'
 import { query, queryOne, withTransaction } from '@/lib/db'
 import { requireUser } from '@/lib/auth/jwt'
 import { requireOwnedMember, requireTeamMemberByTeamId } from '@/lib/auth/team-access'
-import { DEFAULT_ASSIGNMENT_BRIEF } from '@/lib/default-assignment-brief'
+import { generateUniqueJoinCode } from '@/lib/join-code'
 
 // Advisory-lock classid for team vote writes (plant / project-manager).
 // Paired with pg_advisory_xact_lock's 2-arg form so this can't collide with
-// plant-health.ts's LEDGER_LOCK_CLASS (1) or task_deadline_events' unclassed
-// single-arg per-task lock — see the comment on LEDGER_LOCK_CLASS.
+// plant-health.ts's LEDGER_LOCK_CLASS (1) — see the comment on LEDGER_LOCK_CLASS.
 const TEAM_VOTE_LOCK_CLASS = 2
 
 function isPlantVoteBody(value: unknown): value is { memberId: string; plantType: string } {
@@ -30,31 +29,32 @@ type ProjectManagerVoteResult =
   | { ok: true; agreed: boolean; votes: Record<string, string>; projectManagerId: string | null }
   | { ok: false; error: string }
 
-function randomCode(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
-}
-
 export async function POST(req: Request) {
   try {
     const userId = await requireUser()
     if (!userId) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
-    const { name } = await req.json()
+    const { name, courseJoinCode } = await req.json()
     if (!name?.trim()) return NextResponse.json({ error: 'Name required' }, { status: 400 })
 
-    let join_code = randomCode()
-    let attempts = 0
-    while (attempts < 10) {
-      const existing = await queryOne('SELECT id FROM teams WHERE join_code = $1', [join_code])
-      if (!existing) break
-      join_code = randomCode()
-      attempts++
+    let courseId: string | null = null
+    if (typeof courseJoinCode === 'string' && courseJoinCode.trim()) {
+      const course = await queryOne<{ id: string }>(
+        'SELECT id FROM courses WHERE join_code = $1 AND deleted_at IS NULL',
+        [courseJoinCode.trim().toUpperCase()]
+      )
+      if (!course) return NextResponse.json({ error: 'Course code not found' }, { status: 400 })
+      courseId = course.id
     }
 
+    const join_code = await generateUniqueJoinCode(async code => {
+      const existing = await queryOne('SELECT id FROM teams WHERE join_code = $1', [code])
+      return existing !== null
+    })
+
     const team = await queryOne<{ id: string; name: string; join_code: string }>(
-      'INSERT INTO teams (name, join_code, assignment_brief) VALUES ($1, $2, $3) RETURNING id, name, join_code',
-      [name.trim(), join_code, DEFAULT_ASSIGNMENT_BRIEF]
+      'INSERT INTO teams (name, join_code, course_id) VALUES ($1, $2, $3) RETURNING id, name, join_code',
+      [name.trim(), join_code, courseId]
     )
 
     return NextResponse.json(team, { status: 201 })
