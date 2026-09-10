@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
 import { query } from '@/lib/db'
-import { requireCourseOwner } from '@/lib/auth/instructor'
+import { requireCourseAccess } from '@/lib/auth/instructor'
 import { levelToState, DEFAULT_LEVEL } from '@/lib/plant-health'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ courseId: string }> }) {
   try {
     const { courseId } = await params
-    const userId = await requireCourseOwner(courseId)
+    const userId = await requireCourseAccess(courseId)
     if (!userId) return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
 
     const rows = await query<{
