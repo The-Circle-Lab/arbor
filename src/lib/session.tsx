@@ -7,7 +7,7 @@ export interface SessionUser {
   email: string
   display_name: string
   pronouns: string | null
-  role: 'student' | 'instructor'
+  role: 'student' | 'instructor' | 'researcher'
 }
 
 export interface Membership {
@@ -83,4 +83,8 @@ export function getMembership(memberships: Membership[], code: string): Membersh
 
 export function isInstructorUser(user: SessionUser | null): boolean {
   return user?.role === 'instructor'
+}
+
+export function isResearcherUser(user: SessionUser | null): boolean {
+  return user?.role === 'researcher'
 }

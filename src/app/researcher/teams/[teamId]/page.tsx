@@ -72,7 +72,9 @@ interface Resolution {
   resolved_at: string
 }
 
-export default function InstructorTeamDetailPage() {
+// Read-only copy of src/app/instructor/teams/[teamId]/page.tsx, fetching
+// from /api/researcher/teams/* instead of /api/instructor/teams/*.
+export default function ResearcherTeamDetailPage() {
   const { teamId } = useParams<{ teamId: string }>()
   const router = useRouter()
 
@@ -95,10 +97,10 @@ export default function InstructorTeamDetailPage() {
     async function load() {
       try {
         const [teamRes, healthRes, cyclesRes, agreementsRes] = await Promise.all([
-          fetch(`/api/instructor/teams/${teamId}`),
-          fetch(`/api/instructor/teams/${teamId}/health`),
-          fetch(`/api/instructor/teams/${teamId}/cycles`),
-          fetch(`/api/instructor/teams/${teamId}/agreements`),
+          fetch(`/api/researcher/teams/${teamId}`),
+          fetch(`/api/researcher/teams/${teamId}/health`),
+          fetch(`/api/researcher/teams/${teamId}/cycles`),
+          fetch(`/api/researcher/teams/${teamId}/agreements`),
         ])
         if (ignore) return
         if (!teamRes.ok || !healthRes.ok || !cyclesRes.ok || !agreementsRes.ok) { setNotFound(true); return }
@@ -136,8 +138,8 @@ export default function InstructorTeamDetailPage() {
       // Fired together — the summary fetch doesn't depend on the tension
       // response, so there's no reason to pay their latencies back-to-back.
       const [res, summaryRes] = await Promise.all([
-        fetch(`/api/instructor/teams/${teamId}/tension/${cycle}`),
-        fetch(`/api/instructor/teams/${teamId}/summary/${cycle}`),
+        fetch(`/api/researcher/teams/${teamId}/tension/${cycle}`),
+        fetch(`/api/researcher/teams/${teamId}/summary/${cycle}`),
       ])
       if (latestCycleRef.current !== cycle) return
       if (res.status === 202) { setTensionStatus({ kind: 'not_ready' }); return }
@@ -169,7 +171,7 @@ export default function InstructorTeamDetailPage() {
     setGeneratingSummary(true)
     setSummaryError('')
     try {
-      const res = await fetch(`/api/instructor/teams/${teamId}/summary/${cycle}`, { method: 'POST' })
+      const res = await fetch(`/api/researcher/teams/${teamId}/summary/${cycle}`, { method: 'POST' })
       if (latestCycleRef.current !== cycle) return
       if (res.status === 202 || !res.ok) { setSummaryError('Could not generate a summary for this cycle.'); return }
       const data: SummaryRow = await res.json()
@@ -206,7 +208,7 @@ export default function InstructorTeamDetailPage() {
   if (notFound || !team || !health) {
     return (
       <main className="min-h-screen bg-stone-50 flex items-center justify-center">
-        <p className="text-stone-500 text-sm">This team isn&apos;t in one of your courses.</p>
+        <p className="text-stone-500 text-sm">This team could not be found.</p>
       </main>
     )
   }
@@ -216,7 +218,7 @@ export default function InstructorTeamDetailPage() {
   return (
     <main className="min-h-screen bg-stone-50 p-4 md:p-8">
       <div className="max-w-3xl mx-auto">
-        <button onClick={() => router.push('/instructor')} className="text-xs text-stone-400 hover:text-stone-600 mb-4 block">
+        <button onClick={() => router.push('/researcher')} className="text-xs text-stone-400 hover:text-stone-600 mb-4 block">
           ← Back to all groups
         </button>
 
@@ -319,7 +321,7 @@ export default function InstructorTeamDetailPage() {
         {selectedCycle !== null && tensionStatus.kind === 'ready' && (
           <div className="bg-white rounded-2xl shadow-sm border border-stone-100 p-6 mb-6">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-bold text-stone-800">Instructor summary</h2>
+              <h2 className="text-lg font-bold text-stone-800">Researcher summary</h2>
               {!summary && (
                 <button
                   onClick={handleGenerateSummary}
