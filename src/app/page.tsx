@@ -24,7 +24,7 @@ export default function LandingPage() {
   }, [loading, user, memberships, submitting, router])
 
   async function handleCreate() {
-    if (!teamName.trim()) return setError('Please fill in all fields.')
+    if (!teamName.trim() || !courseCode.trim()) return setError('Please fill in all fields.')
     setSubmitting(true)
     setError('')
     try {
@@ -159,10 +159,11 @@ export default function LandingPage() {
             />
             <input
               className="border border-stone-300 rounded-lg px-4 py-3 text-stone-800 tracking-widest focus:outline-none focus:ring-2 focus:ring-green-600"
-              placeholder="Course code (optional)"
+              placeholder="Course code"
               value={courseCode}
               onChange={e => setCourseCode(e.target.value.toUpperCase())}
               maxLength={6}
+              required
             />
             {error && <p className="text-red-500 text-sm">{error}</p>}
             <button
