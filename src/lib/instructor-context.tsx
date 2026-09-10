@@ -14,6 +14,7 @@ export interface InstructorCourse {
   join_code: string
   created_at: string
   team_count: number
+  is_owner: boolean
 }
 
 interface InstructorCourseContextValue {

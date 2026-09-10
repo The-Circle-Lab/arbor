@@ -27,6 +27,28 @@ export async function requireCourseOwner(courseId: string): Promise<string | nul
   return userId
 }
 
+// Any instructor with a course_instructors row for this course (owner or
+// added), on a course that hasn't been soft-deleted. This is the "any
+// instructor on the course" check (view, add instructor) — as opposed to
+// requireCourseOwner, which stays owner-only.
+export async function requireCourseAccess(courseId: string): Promise<string | null> {
+  if (!isUuid(courseId)) return null
+
+  const userId = await requireInstructor()
+  if (!userId) return null
+
+  const row = await queryOne<{ id: string }>(
+    `SELECT c.id
+     FROM courses c
+     JOIN course_instructors ci ON ci.course_id = c.id
+     WHERE c.id = $1 AND ci.user_id = $2 AND c.deleted_at IS NULL`,
+    [courseId, userId]
+  )
+  if (!row) return null
+
+  return userId
+}
+
 export interface InstructorTeamAccess {
   userId: string
   teamId: string
@@ -45,7 +67,8 @@ export async function requireInstructorTeam(teamId: string): Promise<InstructorT
     `SELECT t.id AS team_id, c.id AS course_id
      FROM teams t
      JOIN courses c ON c.id = t.course_id
-     WHERE t.id = $1 AND c.instructor_id = $2 AND c.deleted_at IS NULL`,
+     JOIN course_instructors ci ON ci.course_id = c.id
+     WHERE t.id = $1 AND ci.user_id = $2 AND c.deleted_at IS NULL`,
     [teamId, userId]
   )
   if (!row) return null

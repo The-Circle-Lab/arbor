@@ -5,6 +5,7 @@ import { useSession, isInstructorUser } from '@/lib/session'
 import { useInstructorCourses } from '@/lib/instructor-context'
 import { Modal } from '@/components/Modal'
 import { useCreateCourse, CreateCourseForm, CreateCourseSuccess } from '@/components/instructor/CreateCourseFlow'
+import { CourseInstructorsPanel } from '@/components/instructor/CourseInstructorsPanel'
 
 // The course switcher lives inline in the global navbar (UserBar), between
 // the "Logged in as" text and "Log out" — a small anchored dropdown rather
@@ -20,9 +21,13 @@ export function CourseSwitcher() {
       setSelectedCourseId(course.id)
     },
   })
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null)
+  // Same confirm-modal shape covers two actions, chosen by isOwner: the
+  // owner deletes the course outright, a co-instructor instead leaves it —
+  // a co-instructor is never allowed to delete a course they don't own.
+  const [actionTarget, setActionTarget] = useState<{ id: string; name: string; isOwner: boolean } | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const [settingsTarget, setSettingsTarget] = useState<{ id: string; name: string; isOwner: boolean } | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -46,7 +51,7 @@ export function CourseSwitcher() {
     }
   }, [open])
 
-  if (!isInstructorUser(user)) return null
+  if (!user || !isInstructorUser(user)) return null
 
   const selectedCourse = courses.find(c => c.id === selectedCourseId) ?? null
 
@@ -55,17 +60,23 @@ export function CourseSwitcher() {
     resetCreateCourse()
   }
 
-  async function confirmDeleteCourse() {
-    if (!deleteTarget) return
+  async function confirmDeleteOrLeave() {
+    if (!actionTarget || !user) return
     setDeleting(true)
     setDeleteError('')
     try {
-      const res = await fetch(`/api/courses/${deleteTarget.id}`, { method: 'DELETE' })
-      if (!res.ok) { setDeleteError('Could not delete this course.'); return }
+      const url = actionTarget.isOwner
+        ? `/api/courses/${actionTarget.id}`
+        : `/api/courses/${actionTarget.id}/instructors/${user.id}`
+      const res = await fetch(url, { method: 'DELETE' })
+      if (!res.ok) {
+        setDeleteError(actionTarget.isOwner ? 'Could not delete this course.' : 'Could not leave this course.')
+        return
+      }
       await refreshCourses()
-      setDeleteTarget(null)
+      setActionTarget(null)
     } catch {
-      setDeleteError('Could not delete this course.')
+      setDeleteError(actionTarget.isOwner ? 'Could not delete this course.' : 'Could not leave this course.')
     } finally {
       setDeleting(false)
     }
@@ -101,8 +112,19 @@ export function CourseSwitcher() {
                     <p className="text-xs text-stone-400 mt-0.5">{c.team_count} team{c.team_count === 1 ? '' : 's'} · code {c.join_code}</p>
                   </button>
                   <button
-                    onClick={() => { setDeleteTarget({ id: c.id, name: c.name }); setDeleteError(''); setOpen(false) }}
-                    aria-label={`Delete ${c.name}`}
+                    onClick={() => { setSettingsTarget({ id: c.id, name: c.name, isOwner: c.is_owner }); setOpen(false) }}
+                    aria-label={`Manage instructors for ${c.name}`}
+                    className="px-2 text-stone-300 hover:text-stone-600 transition"
+                  >
+                    ⚙
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActionTarget({ id: c.id, name: c.name, isOwner: c.is_owner })
+                      setDeleteError('')
+                      setOpen(false)
+                    }}
+                    aria-label={c.is_owner ? `Delete ${c.name}` : `Leave ${c.name}`}
                     className="px-2 text-stone-300 hover:text-red-600 transition"
                   >
                     ✕
@@ -139,28 +161,45 @@ export function CourseSwitcher() {
         </div>
       </Modal>
 
-      <Modal open={!!deleteTarget} labelledBy="delete-course-title" onClose={() => { setDeleteTarget(null); setDeleteError('') }}>
+      <Modal open={!!actionTarget} labelledBy="delete-course-title" onClose={() => { setActionTarget(null); setDeleteError('') }}>
         <div className="p-6">
-          <h2 id="delete-course-title" className="text-lg font-bold text-stone-800 mb-4">Delete course</h2>
+          <h2 id="delete-course-title" className="text-lg font-bold text-stone-800 mb-4">
+            {actionTarget?.isOwner ? 'Delete course' : 'Leave course'}
+          </h2>
           <p className="text-sm text-stone-600 mb-6">
-            Delete &quot;{deleteTarget?.name}&quot;? Students won&apos;t be able to join it anymore, and you won&apos;t be able to see its teams&apos; data in your dashboard again. This can&apos;t be undone.
+            {actionTarget?.isOwner ? (
+              <>Delete &quot;{actionTarget?.name}&quot;? Students won&apos;t be able to join it anymore, and you won&apos;t be able to see its teams&apos; data in your dashboard again. This can&apos;t be undone.</>
+            ) : (
+              <>Leave &quot;{actionTarget?.name}&quot;? You&apos;ll lose access to its teams&apos; data unless another instructor adds you back.</>
+            )}
           </p>
           {deleteError && <p className="text-sm text-red-600 mb-4">{deleteError}</p>}
           <div className="flex justify-end gap-2">
             <button
-              onClick={() => { setDeleteTarget(null); setDeleteError('') }}
+              onClick={() => { setActionTarget(null); setDeleteError('') }}
               className="px-3 py-1.5 border border-stone-200 text-stone-600 text-sm rounded-lg hover:bg-stone-50 transition"
             >
               Cancel
             </button>
             <button
-              onClick={confirmDeleteCourse}
+              onClick={confirmDeleteOrLeave}
               disabled={deleting}
               className="px-3 py-1.5 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 disabled:opacity-50 transition"
             >
-              {deleting ? 'Deleting…' : 'Delete'}
+              {deleting ? (actionTarget?.isOwner ? 'Deleting…' : 'Leaving…') : (actionTarget?.isOwner ? 'Delete' : 'Leave')}
             </button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal open={!!settingsTarget} labelledBy="course-instructors-title" onClose={() => setSettingsTarget(null)}>
+        <div className="p-6">
+          <h2 id="course-instructors-title" className="text-lg font-bold text-stone-800 mb-4">
+            Instructors — {settingsTarget?.name}
+          </h2>
+          {settingsTarget && (
+            <CourseInstructorsPanel courseId={settingsTarget.id} isOwner={settingsTarget.isOwner} currentUserId={user.id} />
+          )}
         </div>
       </Modal>
     </>
