@@ -7,6 +7,8 @@ import { CHAT_COMPONENTS, COMPONENT_LABELS, COMPONENT_DESCRIPTIONS, ChatComponen
 import { WaitingRoom } from '@/components/WaitingRoom'
 import { DiscussionTimer, DiscussionTimerState } from '@/components/DiscussionTimer'
 import { Coachmark } from '@/components/Coachmark'
+import { MisalignmentFlow } from '@/components/MisalignmentFlow'
+import { EngagementLevel } from '@/lib/subject-scoring'
 
 interface Agreement {
   component: string
@@ -35,6 +37,7 @@ interface TeamResponse {
   members: { id: string; display_name: string }[]
   status: { teamSize: number }
   project_manager_id: string | null
+  engagement_level: EngagementLevel
 }
 
 const RESOLUTION_TUTORIAL_KEY = 'arbour-agree-resolution-tutorial-seen'
@@ -56,6 +59,7 @@ export default function AgreePage() {
   const [teamId, setTeamId] = useState('')
   const [teamSize, setTeamSize] = useState(2)
   const [projectManagerId, setProjectManagerId] = useState<string | null>(null)
+  const [engagementLevel, setEngagementLevel] = useState<EngagementLevel>('low')
   const [flaggedComponents, setFlaggedComponents] = useState<string[]>([])
   const [agreements, setAgreements] = useState<Record<ChatComponent, Agreement | null>>({} as Record<ChatComponent, Agreement | null>)
   const [approvals, setApprovals] = useState<Approval[]>([])
@@ -97,6 +101,7 @@ export default function AgreePage() {
     setTeamSize(teamData.status.teamSize)
     setMembers(teamData.members)
     setProjectManagerId(teamData.project_manager_id ?? null)
+    setEngagementLevel(teamData.engagement_level ?? 'low')
 
     let currentFlagged: string[] = []
     const aiRes = await fetch(`/api/reveal-ai/${code.toUpperCase()}`)
@@ -288,7 +293,7 @@ export default function AgreePage() {
   // Tour only ever shows on the resolution-note UI, which only renders under
   // these same conditions, so it naturally reappears if the PM revisits a
   // still-unresolved flagged component without having finished the tour.
-  const tutorialEligible = isFlagged && !fullyApproved && isProjectManager && !tutorialDismissed && !timerBlockingModalOpen
+  const tutorialEligible = isFlagged && !fullyApproved && isProjectManager && !tutorialDismissed && !timerBlockingModalOpen && engagementLevel !== 'high'
   const showTutorialStep1 = tutorialEligible && tutorialStep === null
   const showTutorialStep2 = tutorialEligible && tutorialStep === 2
 
@@ -327,7 +332,7 @@ export default function AgreePage() {
 
   return (
     <main className="min-h-screen bg-stone-50">
-      {!allDone && flaggedComponents.length > 0 && (
+      {!allDone && flaggedComponents.length > 0 && engagementLevel !== 'high' && (
         <DiscussionTimer
           loading={!timerLoaded}
           timer={timer}
@@ -404,8 +409,23 @@ export default function AgreePage() {
             </div>
           )}
 
-          {/* Resolution note (flagged only) — the project manager records what the team decided */}
-          {isFlagged && !fullyApproved && (
+          {/* Resolution note (flagged only) — the project manager records what the team decided.
+              HIGH-engagement teams get the async 3-stage MisalignmentFlow instead. */}
+          {isFlagged && !fullyApproved && engagementLevel === 'high' && (
+            <div className="mb-4">
+              <MisalignmentFlow
+                key={activeComponent}
+                teamId={teamId}
+                component={activeComponent}
+                memberId={membership.member_id}
+                isProjectManager={isProjectManager}
+                teamSize={teamSize}
+                cycleNumber={0}
+              />
+            </div>
+          )}
+
+          {isFlagged && !fullyApproved && engagementLevel !== 'high' && (
             <div className="mb-4">
               {isProjectManager ? (
                 <>

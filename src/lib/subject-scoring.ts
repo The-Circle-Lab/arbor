@@ -1,5 +1,3 @@
-import { query } from './db'
-import { getTeamSubjectResponses } from './team-members'
 import { SUBJECT_QUESTIONS } from './chat-components'
 
 export interface SubjectResponses {
@@ -97,18 +95,52 @@ export function computeTeamSubjectLevel(subjectResponses: SubjectResponses[]): T
   return { positionSpread, voiceDenominator, voiceBelowV4, level }
 }
 
-export async function storeTeamEngagementLevel(teamId: string, level: TeamEngagementLevel): Promise<void> {
-  await query(
-    `UPDATE teams
-     SET position_spread = $2, voice_denominator = $3, voice_below_v4 = $4, engagement_level = $5
-     WHERE id = $1`,
-    [teamId, level.positionSpread, level.voiceDenominator, level.voiceBelowV4, level.level]
-  )
+export interface MemberVoiceScore {
+  memberId: string
+  displayName: string
+  voiceScore: number | null
 }
 
-export async function refreshTeamEngagementLevel(teamId: string): Promise<TeamEngagementLevel> {
-  const subjectResponses = await getTeamSubjectResponses(teamId)
-  const level = computeTeamSubjectLevel(subjectResponses)
-  await storeTeamEngagementLevel(teamId, level)
-  return level
+export interface FacilitationOrderEntry {
+  memberId: string
+  displayName: string
+}
+
+// Opener = lowest voice score that is < 4, tiebreak by member id ASC.
+// If nobody scored below 4 (including "nobody answered voice at all"), the
+// opener falls back to whoever is first in normal joined_at order (`members`
+// is already sorted that way). Everyone else — including a missing-score
+// member — is then ordered ascending by voice score, id ASC tiebreak
+// throughout; a null voice score sorts last (treated as +Infinity) since
+// "never answered" isn't "below v4" and shouldn't jump the queue.
+export function computeFacilitationOrder(members: MemberVoiceScore[]): FacilitationOrderEntry[] {
+  if (members.length === 0) return []
+
+  const candidates = members.filter(m => m.voiceScore !== null && m.voiceScore < 4)
+  const opener = candidates.length > 0
+    ? candidates.reduce((best, m) => {
+        const mScore = m.voiceScore
+        const bestScore = best.voiceScore
+        if (mScore === null || bestScore === null) return best
+        if (mScore < bestScore) return m
+        if (mScore === bestScore && m.memberId < best.memberId) return m
+        return best
+      })
+    : members[0]
+
+  const rest = members
+    .filter(m => m.memberId !== opener.memberId)
+    .sort((a, b) => {
+      const av = a.voiceScore === null ? Number.POSITIVE_INFINITY : a.voiceScore
+      const bv = b.voiceScore === null ? Number.POSITIVE_INFINITY : b.voiceScore
+      if (av !== bv) return av - bv
+      if (a.memberId < b.memberId) return -1
+      if (a.memberId > b.memberId) return 1
+      return 0
+    })
+
+  return [
+    { memberId: opener.memberId, displayName: opener.displayName },
+    ...rest.map(m => ({ memberId: m.memberId, displayName: m.displayName })),
+  ]
 }
