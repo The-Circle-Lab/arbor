@@ -46,6 +46,47 @@ export interface ReflectionQuestion {
   shuffleOptions?: boolean
 }
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(v => typeof v === 'string')
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  return Object.values(value).every(v => typeof v === 'string')
+}
+
+export function formatReflectionAnswer(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (isStringArray(value)) return value.join(', ')
+  if (isStringRecord(value)) {
+    return Object.entries(value).map(([opt, level]) => `${opt}: ${level}`).join(', ')
+  }
+  return ''
+}
+
+export interface ReflectionAnswerDisplay {
+  answer: string
+  otherText: string | null
+  openText: string | null
+}
+
+// A reflection question's answer, plus its "Other" free-text and open-ended
+// follow-up if the member filled either in — both stored as separate keys
+// (`${question.id}_other` / `_open`) alongside the main answer.
+export function getReflectionAnswerDisplay(
+  question: ReflectionQuestion,
+  responseData: Record<string, unknown> | undefined
+): ReflectionAnswerDisplay | null {
+  if (!responseData) return null
+  const otherRaw = responseData[`${question.id}_other`]
+  const openRaw = responseData[`${question.id}_open`]
+  return {
+    answer: formatReflectionAnswer(responseData[question.id]),
+    otherText: typeof otherRaw === 'string' && otherRaw.trim() ? otherRaw : null,
+    openText: typeof openRaw === 'string' && openRaw.trim() ? openRaw : null,
+  }
+}
+
 export const REFLECTION_QUESTIONS: Record<ChatComponent, ReflectionQuestion[]> = {
   object: [
     {

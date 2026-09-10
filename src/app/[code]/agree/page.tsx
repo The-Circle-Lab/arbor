@@ -8,6 +8,7 @@ import { WaitingRoom } from '@/components/WaitingRoom'
 import { DiscussionTimer, DiscussionTimerState } from '@/components/DiscussionTimer'
 import { Coachmark } from '@/components/Coachmark'
 import { MisalignmentFlow } from '@/components/MisalignmentFlow'
+import { ReflectionAnswersByQuestion } from '@/components/ReflectionAnswersByQuestion'
 import { EngagementLevel } from '@/lib/subject-scoring'
 
 interface Agreement {
@@ -300,22 +301,6 @@ export default function AgreePage() {
   // Reflections for this component
   const compReflections = reflections.filter(r => r.component === activeComponent)
 
-  function formatResponse(data: Record<string, unknown>): string {
-    return Object.entries(data)
-      .filter(([k]) => !k.endsWith('_other'))
-      .map(([, v]) => {
-        if (Array.isArray(v)) return v.join(', ')
-        if (v && typeof v === 'object') {
-          return Object.entries(v as Record<string, string>)
-            .map(([opt, level]) => `${opt}: ${level}`)
-            .join(', ')
-        }
-        return v as string
-      })
-      .filter(Boolean)
-      .join(' · ')
-  }
-
   const STATUS_LABELS: Record<ComponentStatus, string> = {
     needs_resolution: 'Needs discussion',
     needs_draft: 'Generating…',
@@ -385,17 +370,12 @@ export default function AgreePage() {
           {compReflections.length > 0 && (
             <div className="mt-4 mb-4">
               <p className="text-xs text-stone-400 uppercase tracking-wide font-medium mb-2">What each person said</p>
-              <div
-                className="grid gap-3"
-                style={{ gridTemplateColumns: `repeat(${Math.max(compReflections.length, 1)}, minmax(0, 1fr))` }}
-              >
-                {compReflections.map(r => (
-                  <div key={r.member_id} className="bg-stone-50 rounded-xl p-3">
-                    <p className="text-xs font-semibold text-stone-500 mb-1">{r.display_name}</p>
-                    <p className="text-xs text-stone-700">{formatResponse(r.response_data)}</p>
-                  </div>
-                ))}
-              </div>
+              <ReflectionAnswersByQuestion
+                component={activeComponent}
+                members={members}
+                anonymize={engagementLevel === 'high'}
+                getResponseData={memberId => compReflections.find(r => r.member_id === memberId)?.response_data}
+              />
             </div>
           )}
 

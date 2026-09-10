@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useSession, getMembership } from '@/lib/session'
 import { CHAT_COMPONENTS, COMPONENT_LABELS, COMPONENT_DESCRIPTIONS, ChatComponent } from '@/lib/chat-components'
 import { DiscussionTimerStartModal } from '@/components/DiscussionTimerStartModal'
+import { ReflectionAnswersByQuestion } from '@/components/ReflectionAnswersByQuestion'
 import { EngagementLevel, FacilitationOrderEntry } from '@/lib/subject-scoring'
 
 const NEGOTIATION_NUDGES: Record<ChatComponent, string> = {
@@ -35,7 +36,7 @@ export default function RevealPage() {
   const { loading, user, memberships } = useSession()
   const membership = getMembership(memberships, code)
   const [reflections, setReflections] = useState<Reflection[]>([])
-  const [members, setMembers] = useState<string[]>([])
+  const [members, setMembers] = useState<{ id: string; display_name: string }[]>([])
   const [teamId, setTeamId] = useState('')
   const [aiResult, setAiResult] = useState<RevealAI | null>(null)
   const [loadingAI, setLoadingAI] = useState(false)
@@ -65,12 +66,10 @@ export default function RevealPage() {
       setWaitingForTeam(false)
       setReflections(refData.reflections)
 
-      const unique = Array.from(new Set<string>(refData.reflections.map((r: Reflection) => r.display_name)))
-      setMembers(unique)
-
       const teamRes = await fetch(`/api/teams/${code.toUpperCase()}`)
       const teamData = await teamRes.json()
       setTeamId(teamData.id)
+      setMembers(teamData.members ?? [])
       setProjectManagerId(teamData.project_manager_id ?? null)
       setEngagementLevel(teamData.engagement_level ?? 'low')
       setFacilitationOrder(teamData.facilitation_order ?? [])
@@ -162,22 +161,6 @@ export default function RevealPage() {
     return reflections.filter(r => r.component === component)
   }
 
-  function formatResponse(data: Record<string, unknown>): string {
-    return Object.entries(data)
-      .filter(([k]) => !k.endsWith('_other') && !k.endsWith('_open'))
-      .map(([, v]) => {
-        if (Array.isArray(v)) return v.join(', ')
-        if (v && typeof v === 'object') {
-          return Object.entries(v as Record<string, string>)
-            .map(([opt, level]) => `${opt}: ${level}`)
-            .join(', ')
-        }
-        return v as string
-      })
-      .filter(Boolean)
-      .join('\n')
-  }
-
   if (waitingForTeam) {
     return (
       <main className="min-h-screen bg-stone-50 flex items-center justify-center p-6">
@@ -257,22 +240,17 @@ export default function RevealPage() {
             )}
           </div>
 
-          {/* Member answers side by side */}
-          <div
-            className="grid gap-4 mb-5"
-            style={{ gridTemplateColumns: `repeat(${Math.max(members.length, 1)}, minmax(0, 1fr))` }}
-          >
-            {members.map(name => {
-              const ref = getResponsesForComponent(activeComponent).find(r => r.display_name === name)
-              return (
-                <div key={name} className="bg-stone-50 rounded-xl p-4">
-                  <p className="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-2">{name}</p>
-                  <p className="text-sm text-stone-700 whitespace-pre-line">
-                    {ref ? formatResponse(ref.response_data) : <span className="text-stone-300 italic">No response</span>}
-                  </p>
-                </div>
-              )
-            })}
+          {/* What each person said, grouped by question */}
+          <div className="mb-5">
+            <p className="text-xs text-stone-400 uppercase tracking-wide font-medium mb-2">What each person said</p>
+            <ReflectionAnswersByQuestion
+              component={activeComponent}
+              members={members}
+              // Reached only for low/medium — HIGH is redirected to /agree
+              // before this render, so anonymizing here would never apply.
+              anonymize={false}
+              getResponseData={memberId => getResponsesForComponent(activeComponent).find(r => r.member_id === memberId)?.response_data}
+            />
           </div>
 
           {/* AI comment */}
