@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { query, queryOne, withTransaction } from '@/lib/db'
 import { requireUser } from '@/lib/auth/jwt'
 import { requireOwnedMember, requireTeamMemberByTeamId } from '@/lib/auth/team-access'
-import { DEFAULT_ASSIGNMENT_BRIEF } from '@/lib/default-assignment-brief'
 import { generateUniqueJoinCode } from '@/lib/join-code'
 
 // Advisory-lock classid for team vote writes (plant / project-manager).
@@ -55,8 +54,8 @@ export async function POST(req: Request) {
     })
 
     const team = await queryOne<{ id: string; name: string; join_code: string }>(
-      'INSERT INTO teams (name, join_code, assignment_brief, course_id) VALUES ($1, $2, $3, $4) RETURNING id, name, join_code',
-      [name.trim(), join_code, DEFAULT_ASSIGNMENT_BRIEF, courseId]
+      'INSERT INTO teams (name, join_code, course_id) VALUES ($1, $2, $3) RETURNING id, name, join_code',
+      [name.trim(), join_code, courseId]
     )
 
     return NextResponse.json(team, { status: 201 })
