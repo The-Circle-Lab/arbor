@@ -28,7 +28,7 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
     CREATE TABLE IF NOT EXISTS misalignment_submissions (
       id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       team_id      UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
-      component    chat_component NOT NULL,
+      component    TEXT NOT NULL CHECK (component IN ('object','division_of_labor','rules','tools','community')),
       cycle_number SMALLINT NOT NULL DEFAULT 0 CHECK (cycle_number IN (0, 1, 2)),
       member_id    UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
       status       TEXT NOT NULL CHECK (status IN ('submitted', 'skipped')),
@@ -46,7 +46,7 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
     CREATE TABLE IF NOT EXISTS misalignment_resolutions (
       id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       team_id       UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
-      component     chat_component NOT NULL,
+      component     TEXT NOT NULL CHECK (component IN ('object','division_of_labor','rules','tools','community')),
       cycle_number  SMALLINT NOT NULL DEFAULT 0 CHECK (cycle_number IN (0, 1, 2)),
       round         INT NOT NULL DEFAULT 1,
       reject_count  INT NOT NULL DEFAULT 0 CHECK (reject_count BETWEEN 0 AND 2),
