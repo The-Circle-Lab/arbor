@@ -6,8 +6,7 @@ import { generateUniqueJoinCode } from '@/lib/join-code'
 
 // Advisory-lock classid for team vote writes (plant / project-manager).
 // Paired with pg_advisory_xact_lock's 2-arg form so this can't collide with
-// plant-health.ts's LEDGER_LOCK_CLASS (1) or task_deadline_events' unclassed
-// single-arg per-task lock — see the comment on LEDGER_LOCK_CLASS.
+// plant-health.ts's LEDGER_LOCK_CLASS (1) — see the comment on LEDGER_LOCK_CLASS.
 const TEAM_VOTE_LOCK_CLASS = 2
 
 function isPlantVoteBody(value: unknown): value is { memberId: string; plantType: string } {

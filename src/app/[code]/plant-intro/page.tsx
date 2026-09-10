@@ -85,23 +85,6 @@ export default function PlantIntroPage() {
           {current.cta}
         </button>
 
-        {isLast && (
-          <button
-            onClick={() => router.push(`/${code}/tasks`)}
-            className="mt-3 w-full bg-green-700/10 text-green-800 border border-green-700/20 rounded-xl py-3 text-sm font-medium hover:bg-green-700/20 transition"
-          >
-            View tasks
-          </button>
-        )}
-
-        {current.secondary && (
-          <button
-            onClick={handleLater}
-            className="mt-3 w-full text-sm text-stone-400 hover:text-stone-600 transition"
-          >
-            {current.secondary}
-          </button>
-        )}
       </div>
     </main>
   )

@@ -51,8 +51,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
     team: { ...context.team, grade },
     agreements: context.agreements,
     plantHealthHistory: context.plantHealthHistory,
-    taskWorkflow: context.taskWorkflow,
-    taskStats: context.taskStats,
     decisionTimeline,
     aiReport,
     aiReportStale: !isReportFresh(aiReport, grade),
@@ -101,7 +99,6 @@ export async function POST(_req: Request, { params }: { params: Promise<{ code: 
       { title: context.team.projectTitle, brief: null, grade },
       agreements,
       { missedDeadlines, recoveredDeadlines, checkinDecrements, finalState },
-      { done: context.taskStats.done, total: context.taskWorkflow.length, declinedSubmissions: context.declinedSubmissions.length },
     )
 
     await query(

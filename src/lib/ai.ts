@@ -274,234 +274,6 @@ ${NO_MEMBER_ATTRIBUTION_RULE}`
   }
 }
 
-export interface TaskProjectContext {
-  title: string | null
-  brief: string | null
-  deadline: string | null
-}
-
-export interface TaskMemberInput {
-  id: string
-  displayName: string
-  divisionOfLabor: Record<string, unknown>
-}
-
-export interface TaskSuggestion {
-  title: string
-  description: string
-  assigneeMemberId: string | null
-  deadline: string | null
-}
-
-function buildTaskSuggestionsSchema(memberIds: string[]) {
-  const assigneeSchema = memberIds.length > 0
-    ? { anyOf: [{ type: 'string', enum: memberIds }, { type: 'null' }] }
-    : { type: 'null' }
-
-  return {
-    type: 'object',
-    properties: {
-      tasks: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            title: { type: 'string' },
-            description: { type: 'string' },
-            assignee_member_id: assigneeSchema,
-            deadline: { type: ['string', 'null'] },
-          },
-          required: ['title', 'description', 'assignee_member_id', 'deadline'],
-          additionalProperties: false,
-        },
-      },
-    },
-    required: ['tasks'],
-    additionalProperties: false,
-  }
-}
-
-export async function generateTaskSuggestions(
-  project: TaskProjectContext,
-  agreements: Partial<Record<ChatComponent, string>>,
-  members: TaskMemberInput[],
-): Promise<TaskSuggestion[]> {
-  const projectSection = [
-    project.title ? `Project title: ${project.title}` : '',
-    project.brief ? `Assignment brief: ${project.brief}` : '',
-    project.deadline ? `Team deadline: ${project.deadline}` : '',
-  ].filter(Boolean).join('\n') || 'No project details were provided.'
-
-  const taskRelevantComponents: ChatComponent[] = ['object', 'division_of_labor']
-  const agreementSection = taskRelevantComponents
-    .filter(c => agreements[c])
-    .map(c => `${COMPONENT_LABELS[c]}: ${agreements[c]}`)
-    .join('\n') || 'No agreement text available yet.'
-
-  const memberSection = members.map(m => {
-    const bits = [
-      m.divisionOfLabor.expected_role ? `Wants to lead: ${m.divisionOfLabor.expected_role}` : '',
-      m.divisionOfLabor.fair_split ? `Fair split preference: ${m.divisionOfLabor.fair_split}` : '',
-      m.divisionOfLabor.avoid ? `Wants to avoid: ${m.divisionOfLabor.avoid}` : '',
-    ].filter(Boolean).join('\n  ')
-    return `- ${m.displayName} (id: ${m.id})${bits ? `\n  ${bits}` : ''}`
-  }).join('\n')
-
-  const prompt = `You are helping a student team break their project into a concrete task list.
-
-${projectSection}
-
-What the team agreed on:
-${agreementSection}
-
-Team members and what they said about the role/contribution they want:
-${memberSection}
-
-Suggest 5 to 10 concrete tasks that would make progress on this project. For each task:
-- Give a short title and a 1-2 sentence description.
-- Suggest one owner by picking their id from the member list above, based on what they said about the role they want — leave assignee_member_id null if no member is a clear fit.
-- Suggest a deadline (YYYY-MM-DD) that falls on or before the team deadline if one was given; otherwise use your judgement based on the project timeline implied above, or leave it null if there's not enough information to guess.
-
-Make sure that the tasks are fairly distributed across the team based on the work required for each task, and according to the decisions made in the collaboration agreement.`
-
-  const schema = buildTaskSuggestionsSchema(members.map(m => m.id))
-  const message = await sendAiApiRequest<{
-    tasks: { title: string; description: string; assignee_member_id: string | null; deadline: string | null }[]
-  }>('default_model', 1800, prompt, schema)
-
-  return message.tasks.map(t => ({
-    title: t.title,
-    description: t.description,
-    assigneeMemberId: t.assignee_member_id,
-    deadline: t.deadline,
-  }))
-}
-
-const submissionSummarySchema = {
-  type: 'object',
-  properties: { summary: { type: 'string' } },
-  required: ['summary'],
-  additionalProperties: false,
-}
-
-export async function generateSubmissionSummary(
-  task: { title: string; description: string | null },
-  submission: { content: string; url: string | null }
-): Promise<string | null> {
-  const prompt = `A team member submitted work for a task. Write a 1-2 sentence plain-language summary of what they submitted, for teammates who need to review it quickly.
-
-Task: ${task.title}${task.description ? `\n${task.description}` : ''}
-
-Submission:
-${submission.content}${submission.url ? `\nLink: ${submission.url}` : ''}
-
-Be specific to what they actually wrote — do not add things they didn't say.`
-
-  try {
-    const message = await sendAiApiRequest<{ summary: string }>('fast_model', 300, prompt, submissionSummarySchema)
-    return message.summary
-  } catch {
-    return null
-  }
-}
-
-export interface DeadlineTaskContext {
-  title: string
-  description: string | null
-  deadline: string
-}
-
-export interface DeadlineActionSuggestion {
-  label: string
-  rationale: string
-  action: 'extend' | 'reassign' | 'custom'
-  extendDeadline: string | null
-  extendTime: string | null
-  reassignMemberId: string | null
-}
-
-function buildDeadlineSuggestionsSchema(candidateMemberIds: string[]) {
-  const reassignSchema = candidateMemberIds.length > 0
-    ? { anyOf: [{ type: 'string', enum: candidateMemberIds }, { type: 'null' }] }
-    : { type: 'null' }
-
-  return {
-    type: 'object',
-    properties: {
-      suggestions: {
-        type: 'array',
-        maxItems: 2,
-        items: {
-          type: 'object',
-          properties: {
-            label: { type: 'string' },
-            rationale: { type: 'string' },
-            action: { type: 'string', enum: ['extend', 'reassign', 'custom'] },
-            extend_deadline: { type: ['string', 'null'] },
-            extend_time: { type: ['string', 'null'] },
-            reassign_member_id: reassignSchema,
-          },
-          required: ['label', 'rationale', 'action', 'extend_deadline', 'extend_time', 'reassign_member_id'],
-          additionalProperties: false,
-        },
-      },
-    },
-    required: ['suggestions'],
-    additionalProperties: false,
-  }
-}
-
-// Suggestions aren't limited to extend/reassign — 'custom' carries no structured
-// effect at all (e.g. "Schedule a meeting"), so a team can act on it without the
-// AI needing to map every recommendation onto the two structured options.
-export async function generateDeadlineActionSuggestions(
-  task: DeadlineTaskContext,
-  agreements: Partial<Record<ChatComponent, string>>,
-  members: { id: string; displayName: string }[],
-  currentAssigneeId: string | null
-): Promise<DeadlineActionSuggestion[]> {
-  const deadlineRelevantComponents: ChatComponent[] = ['rules', 'division_of_labor']
-  const agreementSection = deadlineRelevantComponents
-    .filter(c => agreements[c])
-    .map(c => `${COMPONENT_LABELS[c]}: ${agreements[c]}`)
-    .join('\n') || 'No agreement text available.'
-
-  // Reassigning to whoever already missed the deadline isn't a suggestion.
-  const candidates = members.filter(m => m.id !== currentAssigneeId)
-  const memberSection = candidates.map(m => `- ${m.displayName} (id: ${m.id})`).join('\n') || 'No other members on the team.'
-
-  const prompt = `A student team missed a deadline on one of their tasks. Suggest 1-2 concrete next steps grounded specifically in what this team already agreed to about how they work together.
-
-Task: ${task.title}${task.description ? `\n${task.description}` : ''}
-Deadline missed: ${task.deadline}
-
-What the team agreed on:
-${agreementSection}
-
-Other team members (for a reassignment suggestion):
-${memberSection}
-
-For each suggestion:
-- Write a short label (e.g. "Extend to Friday and check in", "Hand it to Dan", "Schedule a meeting").
-- Write a 1 sentence rationale that names the specific agreement text driving the suggestion — do not suggest something the team never agreed to.
-- Pick an action: "extend" (propose extend_deadline as YYYY-MM-DD, after today; also propose extend_time as 24-hour HH:MM if the agreement text implies a specific time — e.g. a meeting time or work-hours cutoff — otherwise leave extend_time null and it'll default to end of day), "reassign" (propose reassign_member_id from the list above), or "custom" (anything else — leave extend_deadline, extend_time, and reassign_member_id null).
-- Only suggest something the agreement text actually supports. If nothing in the agreement text supports a confident suggestion, return fewer suggestions rather than inventing one.`
-
-  const schema = buildDeadlineSuggestionsSchema(candidates.map(m => m.id))
-  const message = await sendAiApiRequest<{
-    suggestions: { label: string; rationale: string; action: 'extend' | 'reassign' | 'custom'; extend_deadline: string | null; extend_time: string | null; reassign_member_id: string | null }[]
-  }>('fast_model', 600, prompt, schema)
-
-  return message.suggestions.map(s => ({
-    label: s.label,
-    rationale: s.rationale,
-    action: s.action,
-    extendDeadline: s.extend_deadline,
-    extendTime: s.extend_time,
-    reassignMemberId: s.reassign_member_id,
-  }))
-}
-
 const instructorSummarySchema = {
   type: 'object',
   properties: {
@@ -573,12 +345,6 @@ export interface FinalReportPlantSummary {
   finalState: string
 }
 
-export interface FinalReportTaskSummary {
-  done: number
-  total: number
-  declinedSubmissions: number
-}
-
 export interface FinalReportSummaryResult {
   summary: string
   highlights: string[]
@@ -589,7 +355,6 @@ export async function generateFinalReportSummary(
   project: FinalReportProjectContext,
   agreements: Partial<Record<ChatComponent, string>>,
   plant: FinalReportPlantSummary,
-  tasks: FinalReportTaskSummary,
 ): Promise<FinalReportSummaryResult> {
   const projectSection = [
     project.title ? `Project title: ${project.title}` : '',
@@ -610,8 +375,6 @@ What the team agreed on at the start:
 ${agreementSection}
 
 How the plant (the team's shared health indicator) moved over the project: ${plant.missedDeadlines} deadline(s) were missed, ${plant.recoveredDeadlines} of those were recovered by finishing and getting the work approved, and check-ins applied ${plant.checkinDecrements} additional level decrement(s) for CHAT-alignment tension. The plant ended the project in state: ${plant.finalState}.
-
-Task delivery: ${tasks.done} of ${tasks.total} tasks were completed and approved. ${tasks.declinedSubmissions} submission(s) were declined by a teammate before being approved.
 
 Write a 3-4 sentence plain-language narrative of how this team collaborated and delivered, covering both how they worked together and how the work actually got done. If a final grade is given, connect it to the collaboration story — say plainly how the process related to the result. Do not restate the grade on its own, and do not speculate about a grade that wasn't given. Then list 2-4 short "went well" highlight bullets, and 2-4 short constructive growth-area bullets (framed for what to watch for next time, not blame). Be specific to what actually happened above — do not invent details that weren't given.
 

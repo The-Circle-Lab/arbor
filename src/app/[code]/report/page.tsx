@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useSession, getMembership } from '@/lib/session'
 import { COMPONENT_LABELS, ChatComponent } from '@/lib/chat-components'
-import { STATUS_LABELS, STATUS_COLORS, type TaskStatus } from '@/lib/task-status'
 import { PlantVisual, type PlantType, type PlantState } from '@/components/PlantVisual'
 
 interface AgreementEntry {
@@ -19,71 +18,13 @@ interface PlantHealthEntry {
   delta: number
   source: 'deadline_missed' | 'task_recovered' | 'checkin'
   taskId: string | null
-  taskTitle: string | null
   cycleNumber: number | null
   flaggedComponents: ChatComponent[] | null
   perComponent: Record<ChatComponent, string> | null
 }
 
-interface SubmissionVoteEntry {
-  memberId: string | null
-  displayName: string
-  vote: 'approve' | 'decline'
-  reason: string | null
-  createdAt: string
-}
-
-interface SubmissionCommentEntry {
-  memberId: string | null
-  displayName: string
-  comment: string
-  createdAt: string
-}
-
-interface TaskSubmissionEntry {
-  id: string
-  submitterDisplayName: string | null
-  submittedAt: string
-  content: string
-  url: string | null
-  summary: string | null
-  votes: SubmissionVoteEntry[]
-  comments: SubmissionCommentEntry[]
-}
-
-interface DeadlineProposalEntry {
-  id: string
-  round: number
-  proposedByName: string
-  label: string
-  status: 'pending' | 'accepted' | 'rejected'
-  responses: { displayName: string; response: 'agree' | 'disagree' }[]
-}
-
-interface DeadlineEventEntry {
-  id: string
-  deadline: string
-  detectedAt: string
-  resolvedAt: string | null
-  resolution: string | null
-  resolvedByName: string | null
-  votes: { displayName: string; label: string }[]
-  proposals: DeadlineProposalEntry[]
-}
-
-interface TaskWorkflowEntry {
-  id: string
-  title: string
-  description: string | null
-  status: TaskStatus
-  deadline: string | null
-  assigneeDisplayName: string | null
-  submissions: TaskSubmissionEntry[]
-  deadlineEvents: DeadlineEventEntry[]
-}
-
 interface DecisionTimelineEntry {
-  type: 'agreement_reached' | 'tension_resolved' | 'work_declined' | 'deadline_consensus'
+  type: 'agreement_reached' | 'tension_resolved'
   at: string
   component?: ChatComponent
   label: string
@@ -102,8 +43,6 @@ interface ReportData {
   team: { name: string; projectTitle: string | null; plantType: string | null; grade: string | null }
   agreements: AgreementEntry[]
   plantHealthHistory: PlantHealthEntry[]
-  taskWorkflow: TaskWorkflowEntry[]
-  taskStats: Record<TaskStatus, number>
   decisionTimeline: DecisionTimelineEntry[]
   aiReport: AiReport | null
   aiReportStale: boolean
@@ -124,9 +63,7 @@ const SOURCE_LABELS: Record<PlantHealthEntry['source'], string> = {
 
 const TIMELINE_STYLES: Record<DecisionTimelineEntry['type'], string> = {
   agreement_reached: 'bg-green-50 border-green-100 text-green-900',
-  deadline_consensus: 'bg-green-50 border-green-100 text-green-900',
   tension_resolved: 'bg-amber-50 border-amber-100 text-amber-900',
-  work_declined: 'bg-red-50 border-red-100 text-red-900',
 }
 
 function formatDate(iso: string): string {
@@ -283,12 +220,6 @@ export default function FinalReportPage() {
                       <span className="text-xs text-stone-400">{formatDate(entry.occurredAt)}</span>
                       <span className="text-xs font-medium text-stone-600">→ {STATE_LABELS[entry.state]}</span>
                     </div>
-                    {entry.source !== 'checkin' && entry.taskTitle && (
-                      <p className="text-sm text-stone-700">
-                        {entry.source === 'deadline_missed' ? 'Missed the deadline on ' : 'Finished and got approval on '}
-                        <span className="font-medium">&quot;{entry.taskTitle}&quot;</span>
-                      </p>
-                    )}
                     {entry.source === 'checkin' && (
                       <div className="text-sm text-stone-700">
                         {flagged.length > 0 ? (
@@ -311,82 +242,6 @@ export default function FinalReportPage() {
                 </div>
                 )
               })}
-            </div>
-          )}
-        </div>
-
-        {/* Task & delivery history */}
-        <div className="bg-white rounded-2xl shadow-sm border border-stone-100 p-6 mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-stone-800">Task & delivery history</h2>
-            <span className="text-xs text-stone-400">{`${data.taskStats.done ?? 0} of ${data.taskWorkflow.length} done`}</span>
-          </div>
-          {data.taskWorkflow.length === 0 ? (
-            <p className="text-sm text-stone-400 italic">No tasks were created.</p>
-          ) : (
-            <div className="space-y-4">
-              {data.taskWorkflow.map(task => (
-                <div key={task.id} className="border border-stone-100 rounded-xl p-4">
-                  <div className="flex items-start justify-between gap-3 mb-2">
-                    <div>
-                      <h3 className="text-sm font-semibold text-stone-800">{task.title}</h3>
-                      <p className="text-xs text-stone-400">{task.assigneeDisplayName ?? 'Unassigned'}</p>
-                    </div>
-                    <span className={`text-xs font-medium px-2 py-1 rounded-full border shrink-0 ${STATUS_COLORS[task.status]}`}>
-                      {STATUS_LABELS[task.status]}
-                    </span>
-                  </div>
-
-                  {task.submissions.map(sub => (
-                    <div key={sub.id} className="bg-stone-50 rounded-lg p-3 mt-2">
-                      <p className="text-xs text-stone-400 mb-1">
-                        {`Submitted by ${sub.submitterDisplayName ?? 'a former member'} · ${formatDate(sub.submittedAt)}`}
-                      </p>
-                      <p className="text-sm text-stone-700">{sub.summary ?? sub.content}</p>
-                      {sub.votes.length > 0 && (
-                        <div className="mt-2 space-y-1">
-                          {sub.votes.map((v, i) => (
-                            <p key={i} className={`text-xs ${v.vote === 'decline' ? 'text-red-700' : 'text-green-700'}`}>
-                              {v.displayName} {v.vote === 'decline' ? `declined: "${v.reason}"` : 'approved'}
-                            </p>
-                          ))}
-                        </div>
-                      )}
-                      {sub.comments.length > 0 && (
-                        <div className="mt-2 space-y-1 border-t border-stone-200 pt-2">
-                          {sub.comments.map((c, i) => (
-                            <p key={i} className="text-xs text-stone-600">
-                              <span className="font-medium">{c.displayName}:</span> {c.comment}
-                            </p>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-
-                  {task.deadlineEvents.map(ev => (
-                    <div key={ev.id} className="bg-amber-50 border border-amber-100 rounded-lg p-3 mt-2">
-                      <p className="text-xs font-semibold text-amber-700 mb-1">
-                        Deadline missed {formatDate(ev.detectedAt)}
-                      </p>
-                      {ev.resolvedAt ? (
-                        <p className="text-sm text-stone-700">
-                          Resolved by {ev.resolution}{ev.resolvedByName ? ` (${ev.resolvedByName})` : ''} on {formatDate(ev.resolvedAt)}
-                        </p>
-                      ) : task.status === 'done' ? (
-                        <p className="text-sm text-stone-700">Resolved by finishing the work and getting it approved.</p>
-                      ) : (
-                        <p className="text-sm text-stone-400 italic">Never resolved.</p>
-                      )}
-                      {ev.proposals.filter(p => p.responses.length > 0).map(p => (
-                        <p key={p.id} className="text-xs text-stone-500 mt-1">
-                          {`Round ${p.round}: ${p.proposedByName} proposed "${p.label}" — ${p.responses.map(r => `${r.displayName} ${r.response}d`).join(', ')}`}
-                        </p>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              ))}
             </div>
           )}
         </div>

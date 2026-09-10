@@ -32,7 +32,6 @@ export interface ApplyPlantHealthDeltaParams {
   teamId: string
   delta: number
   source: PlantHealthSource
-  taskId?: string | null
   cycleNumber?: number | null
   detail?: Record<string, unknown>
 }
@@ -61,9 +60,9 @@ export async function applyPlantHealthDelta(
   const appliedDelta = level - current
 
   await tx.query(
-    `INSERT INTO plant_health_events (team_id, level, delta, source, task_id, cycle_number, detail)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
-    [params.teamId, level, appliedDelta, params.source, params.taskId ?? null, params.cycleNumber ?? null, JSON.stringify(params.detail ?? {})]
+    `INSERT INTO plant_health_events (team_id, level, delta, source, cycle_number, detail)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+    [params.teamId, level, appliedDelta, params.source, params.cycleNumber ?? null, JSON.stringify(params.detail ?? {})]
   )
 
   return { level, state: levelToState(level) }

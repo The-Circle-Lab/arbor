@@ -6,7 +6,6 @@ export const TEAM_CREATION = 0
 export const INDIVIDUAL_REFLECTION = 1
 export const REVEAL = 2
 export const AGREEING = 3
-export const TASKS = 4
 export const CHECKIN_1 = 5
 export const PLANT_1 = 6
 export const CHECKIN_2 = 7
@@ -18,7 +17,6 @@ export const STAGE_LABELS: Record<number, string> = {
   [INDIVIDUAL_REFLECTION]: 'Reflecting individually',
   [REVEAL]: 'Comparing reflections',
   [AGREEING]: 'Writing team agreement',
-  [TASKS]: 'Planning tasks',
   [CHECKIN_1]: 'Check-in 1',
   [PLANT_1]: 'Reviewing check-in 1',
   [CHECKIN_2]: 'Check-in 2',

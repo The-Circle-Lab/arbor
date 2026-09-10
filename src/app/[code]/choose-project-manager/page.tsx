@@ -89,7 +89,7 @@ export default function ChooseProjectManagerPage() {
           <p className="text-xs text-green-700 uppercase tracking-wide font-semibold mb-3">What the project manager does</p>
           <ul className="text-sm text-green-900 space-y-2">
             <li className="flex gap-2"><span>•</span> Inputs the project details. </li>
-            <li className="flex gap-2"><span>•</span> Records group decisions about task assignment or negotiation. </li>
+            <li className="flex gap-2"><span>•</span> Records group decisions and negotiations. </li>
             <li className="flex gap-2"><span>•</span> Serves as the “scribe” of the group after group discussions. </li>
           </ul>
           <p className="text-xs text-green-700/80 mt-3">

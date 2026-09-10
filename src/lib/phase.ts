@@ -1,17 +1,13 @@
 import { query, queryOne } from './db'
 import { CHAT_COMPONENTS } from './chat-components'
-import { countTaskApprovals } from './task-approvals'
 
-
-interface TeamStatus {
+export interface TeamStatus {
   stage: number
   hasProjectManager: boolean
   teamSize: number
   reflectionsSubmitted: number
   allReflected: boolean
   allAgreed: boolean
-  hasTasks: boolean
-  tasksApproved: boolean
   checkin1Submitted: number
   allCheckin1Done: boolean
   checkin2Submitted: number
@@ -65,15 +61,6 @@ export async function getTeamStatus(teamId: string): Promise<TeamStatus> {
   const approvalByComponent = new Map<string, number>()
   for (const r of agreedRows) approvalByComponent.set(r.component, r.approvals)
 
-  // Task list: one shared list per team, gated by team-wide (not per-task) approval.
-  const [{ task_count }] = await query<{ task_count: number }>(
-    'SELECT COUNT(*)::int AS task_count FROM tasks WHERE team_id = $1',
-    [teamId]
-  )
-  const taskApprovalCount = await countTaskApprovals(teamId)
-  const hasTasks = task_count > 0
-  const tasksApproved = hasTasks && taskApprovalCount >= team_size
-
   // Check-in counts (members who submitted all components for a cycle)
   const checkin1Count = await countCheckinSubmissions(teamId, 1)
   const checkin2Count = await countCheckinSubmissions(teamId, 2)
@@ -108,8 +95,6 @@ export async function getTeamStatus(teamId: string): Promise<TeamStatus> {
     reflectionsSubmitted,
     allReflected,
     allAgreed,
-    hasTasks,
-    tasksApproved,
     checkin1Submitted: checkin1Count,
     allCheckin1Done: checkin1Count >= team_size,
     checkin2Submitted: checkin2Count,

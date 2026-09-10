@@ -64,7 +64,6 @@ export default function TeamHub() {
         else if (isReflecting) router.push(`/${code}/reflect`)
         else if (stage === REVEAL) router.push(`/${code}/reveal`)
         else if (stage === AGREEING) router.push(`/${code}/agree`)
-        else if (stage === TASKS) router.push(`/${code}/create-tasks`)
         else if (stage === CHECKIN_1) router.push(`/${code}/checkin/1`)
         else if (stage === PLANT_1) router.push(`/${code}/plant/1`)
         else if (stage === CHECKIN_2) router.push(`/${code}/checkin-intro`)

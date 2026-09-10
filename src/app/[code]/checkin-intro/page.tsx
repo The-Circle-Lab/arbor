@@ -41,12 +41,6 @@ export default function CheckinIntroPage() {
         >
           Start check-in →
         </button>
-        <button
-          onClick={() => router.push(`/${code}`)}
-          className="mt-3 w-full text-sm text-stone-400 hover:text-stone-600 transition"
-        >
-          Come back later
-        </button>
       </div>
     </main>
   )
