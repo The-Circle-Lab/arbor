@@ -53,7 +53,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
     [teamId]
   )
 
-  // Kick off AI generation server-side if not already done (fire-and-forget, no await)
+  // Kick off AI generation server-side if not already done (fire-and-forget,
+  // no await) — but the engagement-level refresh itself IS awaited below.
+  // It's a cheap DB read/write, and the reveal page reads `teams.engagement_level`
+  // via a separate GET /api/teams call right after this one resolves; leaving
+  // it inside the fire-and-forget chain raced that follow-up read against a
+  // still-in-flight UPDATE, so the client would capture the stale default
+  // ('low') and never re-fetch it, permanently hiding the medium-only
+  // split-reason UI even after split_reasons was generated correctly.
   const existing = await queryOne('SELECT id FROM reveal_ai WHERE team_id = $1', [teamId])
   if (!existing) {
     const memberMap = new Map<string, MemberReflection>()
@@ -69,8 +76,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
       team?.assignment_brief ? `Brief: ${team.assignment_brief}` : '',
     ].filter(Boolean).join('\n') || undefined
 
-    refreshTeamEngagementLevel(teamId)
-      .then(engagementLevel => generateRevealComparison(Array.from(memberMap.values()), projectContext, engagementLevel.level))
+    const engagementLevel = await refreshTeamEngagementLevel(teamId)
+
+    generateRevealComparison(Array.from(memberMap.values()), projectContext, engagementLevel.level)
       .then(result => query(
         `INSERT INTO reveal_ai (team_id, per_component, flagged_components, split_reasons)
          VALUES ($1, $2, $3, $4) ON CONFLICT (team_id) DO NOTHING`,
