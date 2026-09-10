@@ -342,6 +342,14 @@ export default function ReflectPage() {
               </button>
             )}
             <div className="flex-1" />
+            {currentStep === 'subject' && (
+              <button
+                onClick={() => { setSubjectResponses({}); setCurrentIdx(i => i + 1); setSubmitError(false) }}
+                className="px-4 py-2 text-sm text-stone-500 border border-stone-200 rounded-lg hover:bg-stone-50"
+              >
+                Skip
+              </button>
+            )}
             {!isLast ? (
               <button
                 onClick={() => { setCurrentIdx(i => i + 1); setSubmitError(false) }}
