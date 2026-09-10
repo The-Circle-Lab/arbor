@@ -159,7 +159,6 @@ export function MisalignmentFlow({ component, memberId, isProjectManager, cycleN
       <div className="mb-4">
         <label className="block text-sm font-medium text-stone-700 mb-1">
           What should the group do about this disagreement?
-          <span className="text-stone-400 font-normal ml-1">: your answer is private until everyone&apos;s submitted or skipped.</span>
         </label>
         <textarea
           className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm text-stone-800 resize-none focus:outline-none focus:ring-2 focus:ring-amber-400"
@@ -174,7 +173,7 @@ export function MisalignmentFlow({ component, memberId, isProjectManager, cycleN
             disabled={busy || !submissionText.trim()}
             className="flex-1 bg-green-700 text-white rounded-lg py-2 text-sm font-medium hover:bg-green-800 disabled:opacity-40 transition"
           >
-            {busy ? 'Submitting…' : 'Submit privately'}
+            {busy ? 'Submitting…' : 'Submit'}
           </button>
           <button
             onClick={handleSkip}
@@ -195,7 +194,7 @@ export function MisalignmentFlow({ component, memberId, isProjectManager, cycleN
         readyCheck={raw => isMisalignmentData(raw) && raw.stage !== 'waiting_for_team'}
         onReady={refetch}
         message="Waiting for your team"
-        subMessage="Once everyone's submitted or skipped, you'll see the anonymized answers."
+        subMessage="Once everyone's submitted or skipped, you'll see your teammates' answers."
       />
     )
   }

@@ -69,13 +69,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
       team?.assignment_brief ? `Brief: ${team.assignment_brief}` : '',
     ].filter(Boolean).join('\n') || undefined
 
-    generateRevealComparison(Array.from(memberMap.values()), projectContext)
+    refreshTeamEngagementLevel(teamId)
+      .then(engagementLevel => generateRevealComparison(Array.from(memberMap.values()), projectContext, engagementLevel.level))
       .then(result => query(
         `INSERT INTO reveal_ai (team_id, per_component, flagged_components, split_reasons)
          VALUES ($1, $2, $3, $4) ON CONFLICT (team_id) DO NOTHING`,
         [teamId, JSON.stringify(result.perComponent), result.flaggedComponents, JSON.stringify(result.splitReasons)]
       ))
-      .then(() => refreshTeamEngagementLevel(teamId))
       .catch(e => console.error('reveal-ai generation error:', e))
   }
 

@@ -1,6 +1,61 @@
 import { CHAT_COMPONENTS, ChatComponent, COMPONENT_LABELS } from './chat-components'
 import { sendAiApiRequest } from './ai-api'
+import type { EngagementLevel } from './subject-scoring'
 
+// Reveal's own flag/comment schema — the original 2-field shape, with no
+// split_reason. Kept separate from componentAnalysisSchema below (which
+// still carries split_reason for generateCheckinComparison) so reverting
+// reveal's prompt back to "the original prompt that flags the components"
+// doesn't touch check-in's already-working split-reason feature.
+interface FlagAnalysisResponse {
+  components: Record<ChatComponent, { comment: string; flagged: boolean }>
+}
+
+const flagAnalysisSchema = {
+  type: 'object',
+  properties: {
+    components: {
+      type: 'object',
+      properties: Object.fromEntries(CHAT_COMPONENTS.map(c => [c, {
+        type: 'object',
+        properties: {
+          comment: { type: 'string' },
+          flagged: { type: 'boolean' },
+        },
+        required: ['comment', 'flagged'],
+        additionalProperties: false,
+      }])),
+      required: [...CHAT_COMPONENTS],
+      additionalProperties: false,
+    },
+  },
+  required: ['components'],
+  additionalProperties: false,
+}
+
+// Builds a schema requiring exactly one split-reason string per flagged
+// component — dynamic because the flagged set differs every team, same
+// pattern as buildTaskSuggestionsSchema/buildDeadlineSuggestionsSchema below.
+function buildSplitReasonSchema(components: ChatComponent[]) {
+  return {
+    type: 'object',
+    properties: {
+      split_reasons: {
+        type: 'object',
+        properties: Object.fromEntries(components.map(c => [c, { type: 'string' }])),
+        required: [...components],
+        additionalProperties: false,
+      },
+    },
+    required: ['split_reasons'],
+    additionalProperties: false,
+  }
+}
+
+// generateCheckinComparison's shared schema — still 3 fields (comment,
+// flagged, split_reason) generated together in one call, unlike reveal's now
+// two-call flow above. Left as-is since check-in's split-reason feature
+// already works this way and wasn't part of this change.
 interface ComponentAnalysisResponse {
   components: Record<ChatComponent, { comment: string; flagged: boolean; split_reason: string }>
 }
@@ -79,13 +134,17 @@ export interface MemberReflection {
 export interface RevealAIResult {
   perComponent: Record<ChatComponent, string>
   flaggedComponents: ChatComponent[]
-  splitReasons: Record<ChatComponent, string>
+  // Only flagged components get an entry — nothing ever displays a split
+  // reason for a non-flagged one, and the second AI call below only asks for
+  // reasons on the components the first call actually flagged.
+  splitReasons: Partial<Record<ChatComponent, string>>
 }
 
-// Shared by generateRevealComparison and generateCheckinComparison — both ask
-// the model to analyze all five CHAT components in one call (componentAnalysisSchema
-// requires every key), then split that into a per-component comment map plus
-// the flagged subset.
+// Shared by generateCheckinComparison — asks the model to analyze all five
+// CHAT components (comment, flagged, and a split-reason clause) in one call,
+// then splits that into a per-component comment map, the flagged subset, and
+// a split-reason map. generateRevealComparison below no longer uses this —
+// see the two-call flow it runs instead.
 function splitComponentAnalysis(components: ComponentAnalysisResponse['components']): {
   perComponent: Record<ChatComponent, string>
   flaggedComponents: ChatComponent[]
@@ -110,7 +169,17 @@ function splitComponentAnalysis(components: ComponentAnalysisResponse['component
   }
 }
 
-export async function generateRevealComparison(members: MemberReflection[], projectContext?: string): Promise<RevealAIResult> {
+// Runs the original flag/comment prompt first (unchanged from before
+// split-reason existed), then — only for a MEDIUM-engagement team, and only
+// if anything got flagged — a second, separate prompt asking for a
+// split-reason clause for just those flagged components. LOW and HIGH teams
+// never display a split reason anywhere, so skipping that second call for
+// them isn't just an optimization, it avoids generating text nobody sees.
+export async function generateRevealComparison(
+  members: MemberReflection[],
+  projectContext?: string,
+  engagementLevel?: EngagementLevel
+): Promise<RevealAIResult> {
   const memberSummaries = members.map(m => {
     const sections = CHAT_COMPONENTS.map(comp =>
       `[${COMPONENT_LABELS[comp]}]\n${JSON.stringify(m.responses[comp], null, 2)}`
@@ -128,16 +197,66 @@ The team has ${members.length} members. Their individual reflections across five
 
 ${memberSummaries}
 
-For each of the five CHAT components (object, division_of_labor, rules, tools, community), do three things:
-1. Write a 2-3 sentence plain-language comment on where the team aligns or where a gap exists. Name the CHAT component explicitly. Do not tell the team what to do — only name the gap or alignment. No jargon beyond the component name itself. Write it about the team as a whole, following the attribution rule below.
+For each of the five CHAT components (object, division_of_labor, rules, tools, community), do two things:
+1. Write a 2-3 sentence plain-language comment that identifies specific points where the team's answers align, and specific points where there is a misalignment. Name the CHAT component explicitly. Do not tell the team what to do — only name the specific points of alignment or misalignment. No jargon beyond the component name itself. Write it about the team as a whole, following the attribution rule below.
 2. Decide if this component should be FLAGGED (true/false). Flag it if there is a meaningful gap or potential misalignment that the team should discuss before proceeding.
-3. Write a short causal clause — NOT a full sentence — that grammatically completes the phrase "...split on this, because ___" (e.g. "some of you are prioritizing polish while others are prioritizing meeting the deadline"). Write this even for components you don't flag; it will only be shown when the component is flagged.
 
 ${NO_MEMBER_ATTRIBUTION_RULE}`
 
-  const message = await sendAiApiRequest<ComponentAnalysisResponse>('fast_model', 1800, prompt, componentAnalysisSchema)
+  const message = await sendAiApiRequest<FlagAnalysisResponse>('fast_model', 1500, prompt, flagAnalysisSchema)
 
-  return splitComponentAnalysis(message.components)
+  const perComponent: Record<ChatComponent, string> = {
+    object: message.components.object.comment,
+    division_of_labor: message.components.division_of_labor.comment,
+    rules: message.components.rules.comment,
+    tools: message.components.tools.comment,
+    community: message.components.community.comment,
+  }
+  const flaggedComponents = CHAT_COMPONENTS.filter(c => message.components[c].flagged)
+
+  const splitReasons = engagementLevel === 'medium'
+    ? await generateSplitReasons(flaggedComponents, members)
+    : {}
+
+  return { perComponent, flaggedComponents, splitReasons }
+}
+
+// Second call for generateRevealComparison above: asks only for a
+// split-reason clause, only for the components already known to be flagged.
+// A no-op (no AI call) when nothing's flagged.
+export async function generateSplitReasons(
+  flaggedComponents: ChatComponent[],
+  members: MemberReflection[]
+): Promise<Partial<Record<ChatComponent, string>>> {
+  if (flaggedComponents.length === 0) return {}
+
+  const memberSummaries = members.map(m => {
+    const sections = flaggedComponents.map(comp =>
+      `[${COMPONENT_LABELS[comp]}]\n${JSON.stringify(m.responses[comp], null, 2)}`
+    ).join('\n\n')
+    return `=== ${m.displayName} ===\n${sections}`
+  }).join('\n\n')
+
+  const componentList = flaggedComponents.map(c => COMPONENT_LABELS[c]).join(', ')
+
+  const prompt = `A student team's individual reflections were analyzed using CHAT (Cultural-Historical Activity Theory), and the following components were flagged as having a meaningful gap: ${componentList}.
+
+Their individual reflections for just these flagged components are below.
+
+${memberSummaries}
+
+For each flagged component, write a short causal clause — NOT a full sentence — that grammatically completes the phrase "...split on this, because ___" (e.g. "some of you are prioritizing polish while others are prioritizing meeting the deadline").
+
+${NO_MEMBER_ATTRIBUTION_RULE}`
+
+  const schema = buildSplitReasonSchema(flaggedComponents)
+  const message = await sendAiApiRequest<{ split_reasons: Record<string, string> }>('fast_model', 600, prompt, schema)
+
+  const result: Partial<Record<ChatComponent, string>> = {}
+  for (const c of flaggedComponents) {
+    result[c] = message.split_reasons[c]
+  }
+  return result
 }
 
 export async function generateAgreementDraft(
@@ -161,7 +280,7 @@ CHAT Component: ${COMPONENT_LABELS[component]}
 Individual reflections:
 ${responseText}${resolutionSection}
 
-Draft a 1-2 sentence group agreement in first-person plural (starting with "We...") that captures what this team has decided about ${COMPONENT_LABELS[component]}. Plain language, no jargon. Be specific to what they actually wrote — do not add things they didn't say.`
+Draft a 1-2 sentence group agreement in first-person plural (starting with "We...") that captures what this team has decided about ${COMPONENT_LABELS[component]}. Be specific about what the team agreed on and how they are going to move forward with their group work. Plain language, no jargon. Be specific to what they actually wrote — do not add things they didn't say.`
 
   const message = await sendAiApiRequest<{ agreement: string }>('default_model', 300, prompt, agreementSchema)
 

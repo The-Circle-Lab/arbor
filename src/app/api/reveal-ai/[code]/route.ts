@@ -15,7 +15,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ code: 
   const teamId = membership.teamId
 
   // Return cached result if exists
-  const cached = await queryOne<{ per_component: Record<ChatComponent, string>; flagged_components: string[]; split_reasons: Record<ChatComponent, string> | null }>(
+  const cached = await queryOne<{ per_component: Record<ChatComponent, string>; flagged_components: string[]; split_reasons: Partial<Record<ChatComponent, string>> | null }>(
     'SELECT per_component, flagged_components, split_reasons FROM reveal_ai WHERE team_id = $1',
     [teamId]
   )
@@ -60,8 +60,10 @@ export async function POST(_req: Request, { params }: { params: Promise<{ code: 
     return NextResponse.json({ error: 'Team has not finished reflections' }, { status: 403 })
   }
 
+  const engagementLevel = await refreshTeamEngagementLevel(teamId)
+
   const members = Array.from(memberMap.values())
-  const result = await generateRevealComparison(members)
+  const result = await generateRevealComparison(members, undefined, engagementLevel.level)
 
   await query(
     `INSERT INTO reveal_ai (team_id, per_component, flagged_components, split_reasons)
@@ -69,8 +71,6 @@ export async function POST(_req: Request, { params }: { params: Promise<{ code: 
      ON CONFLICT (team_id) DO NOTHING`,
     [teamId, JSON.stringify(result.perComponent), result.flaggedComponents, JSON.stringify(result.splitReasons)]
   )
-
-  await refreshTeamEngagementLevel(teamId)
 
   return NextResponse.json({
     per_component: result.perComponent,
@@ -85,7 +85,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
   const membership = await requireTeamMember(code)
   if (!membership) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const cached = await queryOne<{ per_component: Record<ChatComponent, string>; flagged_components: string[]; split_reasons: Record<ChatComponent, string> | null }>(
+  const cached = await queryOne<{ per_component: Record<ChatComponent, string>; flagged_components: string[]; split_reasons: Partial<Record<ChatComponent, string>> | null }>(
     'SELECT per_component, flagged_components, split_reasons FROM reveal_ai WHERE team_id = $1',
     [membership.teamId]
   )

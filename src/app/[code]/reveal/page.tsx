@@ -25,7 +25,7 @@ interface Reflection {
 interface RevealAI {
   per_component: Record<ChatComponent, string>
   flagged_components: string[]
-  split_reasons: Record<ChatComponent, string> | null
+  split_reasons: Partial<Record<ChatComponent, string>> | null
 }
 
 export default function RevealPage() {
@@ -44,6 +44,11 @@ export default function RevealPage() {
   const [projectManagerId, setProjectManagerId] = useState<string | null>(null)
   const [engagementLevel, setEngagementLevel] = useState<EngagementLevel>('low')
   const [facilitationOrder, setFacilitationOrder] = useState<FacilitationOrderEntry[]>([])
+  // MEDIUM only: true once the team has stepped through every CHAT component
+  // one at a time via the per-component Continue/"All of us stated our
+  // positions" button below — only then does the real discussion-timer start
+  // modal appear.
+  const [walkthroughDone, setWalkthroughDone] = useState(false)
 
   useEffect(() => {
     if (loading) return
@@ -124,6 +129,18 @@ export default function RevealPage() {
     const interval = setInterval(poll, 3000)
     return () => { cancelled = true; clearInterval(interval) }
   }, [aiResult, flagged.length, engagementLevel, code, router])
+
+  // MEDIUM only: steps the walkthrough to the next CHAT component, or marks
+  // it done once the last component's button is clicked (which reveals the
+  // real discussion-timer start modal below).
+  function handleComponentAdvance() {
+    const idx = CHAT_COMPONENTS.indexOf(activeComponent)
+    if (idx < CHAT_COMPONENTS.length - 1) {
+      setActiveComponent(CHAT_COMPONENTS[idx + 1])
+    } else {
+      setWalkthroughDone(true)
+    }
+  }
 
   async function handleStartTimer() {
     await fetch(`/api/teams/${code.toUpperCase()}/discussion-timer/start`, {
@@ -248,25 +265,42 @@ export default function RevealPage() {
               <p className="font-semibold mb-1 text-xs uppercase tracking-wide opacity-60">
                 {flagged.includes(activeComponent) ? 'Alignment gap' : 'Arbour summary'}
               </p>
-              <p>{aiResult.per_component[activeComponent]}</p>
-              {flagged.includes(activeComponent) && (
-                engagementLevel === 'medium' ? (
-                  <div className="mt-3 text-xs text-amber-900 border-t border-amber-200 pt-3">
-                    <p>{aiResult.split_reasons?.[activeComponent]
-                      ? `Your group's answers were split on this, because ${aiResult.split_reasons[activeComponent]}. Before anyone responds to what someone else said, every member needs to state their own position first, in this order — no replying, no jumping in early:`
-                      : `Your group's answers were split on this. Before anyone responds to what someone else said, every member needs to state their own position first, in this order — no replying, no jumping in early:`}</p>
-                    <ol className="list-decimal list-inside my-2">
-                      {facilitationOrder.map(entry => <li key={entry.memberId}>{entry.displayName}</li>)}
-                    </ol>
-                    <p>Once everyone above has gone, you can start responding to each other. This step is needed because the group was split, and hearing everyone&apos;s opinion is important for making the split visible.</p>
-                  </div>
-                ) : (
-                  <p className="mt-3 text-xs italic opacity-75 border-t border-amber-200 pt-3">
-                    {NEGOTIATION_NUDGES[activeComponent]}
-                  </p>
-                )
+              {flagged.includes(activeComponent) && engagementLevel === 'medium' ? (
+                <>
+                  <p>{aiResult.split_reasons?.[activeComponent]
+                    ? `Your group's answers were split on this, because ${aiResult.split_reasons[activeComponent]}. Before anyone responds to what someone else said, every member needs to state their own position first, in this order — no replying, no jumping in early:`
+                    : `Your group's answers were split on this. Before anyone responds to what someone else said, every member needs to state their own position first, in this order — no replying, no jumping in early:`}</p>
+                  <ol className="list-decimal list-inside my-2">
+                    {facilitationOrder.map(entry => <li key={entry.memberId}>{entry.displayName}</li>)}
+                  </ol>
+                  <p>Once everyone above has gone, you can start responding to each other. This step is needed because the group was split, and hearing everyone&apos;s opinion is important for making the split visible.</p>
+                </>
+              ) : (
+                <>
+                  <p>{aiResult.per_component[activeComponent]}</p>
+                  {flagged.includes(activeComponent) && (
+                    <p className="mt-3 text-xs italic opacity-75 border-t border-amber-200 pt-3">
+                      {NEGOTIATION_NUDGES[activeComponent]}
+                    </p>
+                  )}
+                </>
               )}
             </div>
+          )}
+
+          {/* MEDIUM only: step through every component one at a time before the
+              real discussion timer appears below. */}
+          {aiResult && engagementLevel === 'medium' && flagged.length > 0 && !walkthroughDone && (
+            <button
+              onClick={handleComponentAdvance}
+              className={`w-full rounded-xl py-3 mt-4 font-semibold transition ${
+                flagged.includes(activeComponent)
+                  ? 'bg-amber-600 text-white hover:bg-amber-700'
+                  : 'bg-green-700 text-white hover:bg-green-800'
+              }`}
+            >
+              {flagged.includes(activeComponent) ? 'All of us stated our positions' : 'Continue'}
+            </button>
           )}
         </div>
 
@@ -287,7 +321,6 @@ export default function RevealPage() {
         {aiResult && flagged.length > 0 && engagementLevel === 'high' && (
           <div className="bg-white rounded-2xl shadow-sm border border-stone-100 p-6">
             <h3 className="font-semibold text-stone-800 mb-2">Before you continue</h3>
-            <p className="text-sm text-stone-600 mb-4">Your team will work through each flagged component privately, one at a time, on the Agreements page.</p>
             <button
               onClick={() => router.push(`/${code}/agree`)}
               className="w-full bg-green-700 text-white rounded-xl py-3 font-medium hover:bg-green-800 transition"
@@ -297,7 +330,11 @@ export default function RevealPage() {
           </div>
         )}
 
-        {aiResult && flagged.length > 0 && engagementLevel !== 'high' && (
+        {aiResult && flagged.length > 0 && engagementLevel === 'medium' && walkthroughDone && (
+          <DiscussionTimerStartModal isProjectManager={isProjectManager} onStart={handleStartTimer} />
+        )}
+
+        {aiResult && flagged.length > 0 && engagementLevel === 'low' && (
           <DiscussionTimerStartModal isProjectManager={isProjectManager} onStart={handleStartTimer} />
         )}
       </div>
