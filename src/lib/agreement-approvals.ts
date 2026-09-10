@@ -26,13 +26,19 @@ export async function clearAgreementApprovals(teamId: string, components: ChatCo
   await query('DELETE FROM agreement_approvals WHERE team_id = $1 AND component = ANY($2)', [teamId, list])
 }
 
-export async function recordAgreementApproval(teamId: string, component: ChatComponent, memberId: string): Promise<void> {
-  await query(
+// Returns whether this call actually inserted a new approval (false if the
+// member had already approved) — callers use that to fire "did this
+// approval just complete the component" logic exactly once, not on every
+// repeat/duplicate call.
+export async function recordAgreementApproval(teamId: string, component: ChatComponent, memberId: string): Promise<boolean> {
+  const inserted = await query<{ team_id: string }>(
     `INSERT INTO agreement_approvals (team_id, component, member_id)
      VALUES ($1, $2, $3)
-     ON CONFLICT (team_id, component, member_id) DO NOTHING`,
+     ON CONFLICT (team_id, component, member_id) DO NOTHING
+     RETURNING team_id`,
     [teamId, component, memberId]
   )
+  return inserted.length > 0
 }
 
 export async function withdrawAgreementApproval(teamId: string, component: ChatComponent, memberId: string): Promise<void> {

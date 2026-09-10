@@ -157,7 +157,7 @@ export default function CheckinAgreePage() {
     await fetch('/api/agreements/approve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ teamId, component: active, memberId: membership!.member_id }),
+      body: JSON.stringify({ teamId, component: active, memberId: membership!.member_id, cycleNumber: cycleNum }),
     })
     await loadAll()
   }

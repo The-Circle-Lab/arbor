@@ -6,6 +6,7 @@ import { reviseAgreement } from '@/lib/ai'
 import { ChatComponent } from '@/lib/chat-components'
 import { requireOwnedMember, isProjectManager } from '@/lib/auth/team-access'
 import { clearAgreementApprovals } from '@/lib/agreement-approvals'
+import { logClauseAuthored } from '@/lib/component-flow-events'
 
 // POST: revise a flagged component's agreement using the check-in discussion.
 // Updates the agreement text (charter evolves), clears approvals so the team
@@ -38,6 +39,8 @@ export async function POST(req: Request) {
      WHERE team_id = $3 AND component = $4`,
     [revised, memberId, teamId, component]
   )
+
+  await logClauseAuthored(teamId, component, memberId, 'revised', cycleNumber)
 
   // Updated wording invalidates prior approvals — re-collect them.
   await clearAgreementApprovals(teamId, component)

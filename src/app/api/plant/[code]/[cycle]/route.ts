@@ -10,6 +10,9 @@ import { requireTeamMember } from '@/lib/auth/team-access'
 import { clearAgreementApprovals } from '@/lib/agreement-approvals'
 import { applyPlantHealthDelta, getCurrentPlantLevel, levelToState } from '@/lib/plant-health'
 import { isValidCycle } from '@/lib/cycle'
+import { computeFacilitationOrder } from '@/lib/subject-scoring'
+import { getTeamMemberVoiceScores } from '@/lib/db/subject-scoring'
+import { logFacilitationInstructionFired } from '@/lib/component-flow-events'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ code: string; cycle: string }> }) {
   try {
@@ -77,6 +80,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
     ]))
 
     let finalState = plantResult.state
+    let wasInserted = false
     await withTransaction(async tx => {
       const inserted = await tx.query<{ team_id: string }>(
         `INSERT INTO plant_states (team_id, cycle_number, computed_state, flagged_components, ai_nudge_text, per_component, split_reasons)
@@ -86,6 +90,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
         [teamId, cycleNum, plantResult.state, allFlagged, null, JSON.stringify(comparison.perComponent), JSON.stringify(comparison.splitReasons)]
       )
       if (inserted.length === 0) return
+      wasInserted = true
 
       const drop = flagCountToLevelDrop(allFlagged.length)
       if (drop > 0) {
@@ -110,6 +115,19 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
     // Flagged components are unsettled again — clear their approvals so the team
     // must re-agree on the updated wording before the cycle counts as resolved.
     await clearAgreementApprovals(teamId, allFlagged)
+
+    if (wasInserted && allFlagged.length > 0) {
+      const team = await queryOne<{ engagement_level: string }>('SELECT engagement_level FROM teams WHERE id = $1', [teamId])
+      if (team?.engagement_level === 'medium') {
+        const facilitationOrder = computeFacilitationOrder(await getTeamMemberVoiceScores(teamId)).map(entry => entry.memberId)
+        for (const component of allFlagged) {
+          await logFacilitationInstructionFired(teamId, component, cycleNum, {
+            hasSplitReason: !!comparison.splitReasons[component],
+            facilitationOrder,
+          })
+        }
+      }
+    }
 
     return NextResponse.json({
       computed_state: finalState,

@@ -6,6 +6,7 @@ import { generateRevealComparison, MemberReflection } from '@/lib/ai'
 import { CHAT_COMPONENTS, ChatComponent } from '@/lib/chat-components'
 import { requireTeamMember } from '@/lib/auth/team-access'
 import { refreshTeamEngagementLevel } from '@/lib/db/subject-scoring'
+import { persistRevealAiResult } from '@/lib/reveal-ai'
 
 export async function POST(_req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
@@ -65,12 +66,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ code: 
   const members = Array.from(memberMap.values())
   const result = await generateRevealComparison(members, undefined, engagementLevel.level)
 
-  await query(
-    `INSERT INTO reveal_ai (team_id, per_component, flagged_components, split_reasons)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (team_id) DO NOTHING`,
-    [teamId, JSON.stringify(result.perComponent), result.flaggedComponents, JSON.stringify(result.splitReasons)]
-  )
+  await persistRevealAiResult(teamId, result, engagementLevel.level)
 
   return NextResponse.json({
     per_component: result.perComponent,
