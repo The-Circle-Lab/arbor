@@ -1,7 +1,7 @@
 import type { MigrationBuilder } from 'node-pg-migrate'
 
 // The tasks feature (and the stage-4 "TASKS" step it backed) is removed as
-// of 20260908000001000_remove_tasks_feature.ts — agreement completion now
+// of 20260910010001000_remove_tasks_feature.ts — agreement completion now
 // flows straight into stage 5. This redefines recompute_team_stage() to
 // drop the tasks/task_approvals lookups and the stage-4 assignment, and
 // re-runs the backfill so existing teams' stages reflect it immediately.
@@ -150,7 +150,7 @@ export async function up(pgm: MigrationBuilder): Promise<void> {
 // Restores the exact prior body from 20260831000002000_fix_team_stage_component_count.ts
 // (including v_task_count/v_task_approvals and the stage-4 block). Note this
 // references tasks/task_approvals, which only works if
-// 20260908000001000_remove_tasks_feature.ts hasn't been applied (or is
+// 20260910010001000_remove_tasks_feature.ts hasn't been applied (or is
 // rolled back first).
 export async function down(pgm: MigrationBuilder): Promise<void> {
   pgm.sql(`
