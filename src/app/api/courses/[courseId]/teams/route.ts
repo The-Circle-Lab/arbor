@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { requireCourseAccess } from '@/lib/auth/instructor'
 import { levelToState, DEFAULT_LEVEL } from '@/lib/plant-health'
+import { getCourseTeamCounters } from '@/lib/course-team-counters'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ courseId: string }> }) {
   try {
@@ -44,7 +45,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ courseI
       state: levelToState(row.level ?? DEFAULT_LEVEL),
     }))
 
-    return NextResponse.json({ teams })
+    const counters = await getCourseTeamCounters(courseId)
+
+    return NextResponse.json({ teams, counters })
   } catch (e) {
     console.error('GET /api/courses/[courseId]/teams error:', e)
     return NextResponse.json({ error: String(e) }, { status: 500 })

@@ -7,6 +7,7 @@ import { PlantVisual, STATE_LABELS, STATE_COLORS, isPlantType, type PlantState }
 import { Modal } from '@/components/Modal'
 import { STAGE_LABELS } from '@/lib/team-stage'
 import { useCreateCourse, CreateCourseForm, CreateCourseSuccess } from '@/components/instructor/CreateCourseFlow'
+import type { CourseTeamCounters } from '@/lib/course-team-counters'
 
 interface CourseTeam {
   id: string
@@ -22,6 +23,7 @@ export default function InstructorDashboardPage() {
   const router = useRouter()
   const { courses, loading: coursesLoading, error: coursesError, selectedCourseId, refreshCourses } = useInstructorCourses()
   const [teams, setTeams] = useState<CourseTeam[] | null>(null)
+  const [counters, setCounters] = useState<CourseTeamCounters | null>(null)
   const [loadingTeams, setLoadingTeams] = useState(false)
   const [teamsError, setTeamsError] = useState('')
   const { name: newCourseName, setName: setNewCourseName, creating, error, createdCode, submit: handleCreateCourse, reset: resetCreateCourse } = useCreateCourse({
@@ -44,6 +46,7 @@ export default function InstructorDashboardPage() {
 
   useEffect(() => {
     setTeams(null)
+    setCounters(null)
     setTeamsError('')
     if (!selectedCourseId) return
     let ignore = false
@@ -53,7 +56,7 @@ export default function InstructorDashboardPage() {
         const res = await fetch(`/api/courses/${selectedCourseId}/teams`)
         if (!res.ok) throw new Error('Request failed')
         const data = await res.json()
-        if (!ignore) { setTeams(data.teams); setTeamsError('') }
+        if (!ignore) { setTeams(data.teams); setCounters(data.counters); setTeamsError('') }
       } catch {
         if (!ignore) setTeamsError('Could not load teams.')
       } finally {
@@ -127,6 +130,27 @@ export default function InstructorDashboardPage() {
             >
               {copied ? 'Copied!' : 'Copy'}
             </button>
+          </div>
+        )}
+
+        {selectedCourse && counters !== null && (
+          <div className="flex flex-wrap gap-3 mb-6">
+            <div className="bg-white rounded-xl shadow-sm border border-stone-100 px-3 py-2">
+              <p className="text-[10px] text-stone-400 uppercase tracking-wide font-medium">Teams</p>
+              <p className="text-sm font-bold text-stone-800">{counters.teamCount}</p>
+            </div>
+            <div className="bg-white rounded-xl shadow-sm border border-stone-100 px-3 py-2">
+              <p className="text-[10px] text-stone-400 uppercase tracking-wide font-medium">Members</p>
+              <p className="text-sm font-bold text-stone-800">{counters.memberCount}</p>
+            </div>
+            <div className="bg-white rounded-xl shadow-sm border border-stone-100 px-3 py-2">
+              <p className="text-[10px] text-stone-400 uppercase tracking-wide font-medium">Reflections complete</p>
+              <p className="text-sm font-bold text-stone-800">{counters.reflectionsCompleteCount} / {counters.teamCount}</p>
+            </div>
+            <div className="bg-white rounded-xl shadow-sm border border-stone-100 px-3 py-2">
+              <p className="text-[10px] text-stone-400 uppercase tracking-wide font-medium">Agreements complete</p>
+              <p className="text-sm font-bold text-stone-800">{counters.agreementsCompleteCount} / {counters.teamCount}</p>
+            </div>
           </div>
         )}
 
